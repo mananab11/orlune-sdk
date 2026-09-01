@@ -19,6 +19,9 @@
     "check": "tsc --noEmit -p tsconfig.json",
     "test": "node --test test/*.test.mjs"
   },
+  "devDependencies": {
+    "typescript": "^5.6.2"
+  },
   "keywords": [
     "analytics",
     "ai",

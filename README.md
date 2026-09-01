@@ -9,23 +9,29 @@ Current v1 support:
 - wraps an existing OpenAI client
 - supports `responses.create(...)`
 - supports `chat.completions.create(...)`
+- supports streamed and non-streamed calls for both APIs
 - sends usage telemetry to Orlune
 - keeps provider call behavior unchanged
+- supports `sync` and `background_flush` delivery modes
+- supports `orlune.flush()` for short-lived runtimes and graceful shutdown
 
 ## Install
 
-This package is currently local to the repository. Publishing can be added later.
+This package is currently local to the repository. It is intended to be safe to publish and use for OpenAI text telemetry.
 
 ## Create Client
 
 ```ts
-import { createClient } from "orlune"
+import { OrluneClient } from "orlune"
 
-const orlune = createClient({
+const orlune = OrluneClient({
   apiKey: "your-api-key",
   environment: "production",
   telemetryDelivery: {
-    mode: "sync",
+    mode: "background_flush",
+    flushIntervalMs: 1000,
+    maxQueueSize: 500,
+    maxRetries: 2,
   },
 })
 ```
@@ -33,8 +39,17 @@ const orlune = createClient({
 `telemetryDelivery.mode` currently supports:
 
 - `sync`
+- `background_flush`
 
-`manual_flush` and `background_flush` are reserved for later.
+`background_flush` queues telemetry in memory and drains it on an interval.
+
+For short-lived runtimes such as serverless functions, CLI jobs, or controlled shutdown paths, call:
+
+```ts
+await orlune.flush()
+```
+
+That is the delivery guarantee point for queued telemetry.
 
 ## Wrap Existing OpenAI Client
 
@@ -45,7 +60,7 @@ const rawOpenAI = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
 
-const openai = orlune.wrap(existingOpenAIClient, {
+const openai = orlune.wrap(rawOpenAI, {
   defaults: {
     feature: "Suggestions generation",
     activity: {
@@ -74,6 +89,53 @@ await openai.responses.create({
 ```
 
 The SDK strips `orlune_metadata` before forwarding the request to OpenAI.
+
+## Streaming
+
+The same wrapped client works for streamed calls.
+
+Responses API:
+
+```ts
+const stream = await openai.responses.create({
+  model: "gpt-4.1-mini",
+  input: "Hello",
+  stream: true,
+  orlune_metadata: {
+    customerId: "customer_123",
+    eventType: "MODEL_STREAM",
+  },
+})
+
+for await (const event of stream) {
+  void event
+}
+```
+
+Chat Completions API:
+
+```ts
+const stream = await openai.chat.completions.create({
+  model: "gpt-4.1-mini",
+  messages: [{ role: "user", content: "Hello" }],
+  stream: true,
+  orlune_metadata: {
+    customerId: "customer_123",
+    eventType: "CHAT_STREAM",
+  },
+})
+
+for await (const chunk of stream) {
+  void chunk
+}
+```
+
+Streaming behavior:
+
+- the SDK does not emit telemetry for intermediate chunks
+- it emits one terminal event when the stream completes
+- if the stream is canceled or throws, it emits one terminal non-success event instead
+- for Chat Completions, the SDK enables `stream_options.include_usage = true` automatically
 
 ## Stitch Multiple Calls Into One Activity
 
@@ -170,7 +232,9 @@ The caller provides business context:
 
 `feature` can be provided once in `defaults` or per invocation in `orlune_metadata`.
 
-If `customerId`, `eventType`, or effective `feature` is missing, the SDK skips telemetry for that invocation and logs a warning with `console.warn(...)`.
+If `customerId` or `eventType` is missing, the SDK skips telemetry for that invocation and logs a warning with `console.warn(...)`.
+
+If effective `feature` is missing, the SDK falls back to `"UNKNOWN"` and logs a warning.
 
 The SDK derives runtime fields:
 
@@ -187,6 +251,16 @@ The SDK derives runtime fields:
 - current transport target is the production ingestion endpoint
 - `sandbox` environment is not configured yet
 - telemetry failures do not change provider call behavior
+- the SDK is currently intended for OpenAI text telemetry only
+- if a streamed request ends without final usage from the provider, the backend may ingest the request with zero cost data
+
+## Shutdown Guidance
+
+Recommended usage:
+
+- long-lived server: use `background_flush`, and call `await orlune.flush()` during graceful shutdown
+- short-lived function or CLI: use `background_flush`, and call `await orlune.flush()` before returning or exiting
+- strictest delivery semantics: use `sync`
 
 ## Development
 

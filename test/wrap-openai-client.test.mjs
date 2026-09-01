@@ -1,7 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 
-import { createClient } from "../dist/index.js"
+import { OrluneClient } from "../dist/index.js"
 
 test("wrapped OpenAI responses.create strips orlune_metadata and sends telemetry", async () => {
   const sentRequests = []
@@ -41,7 +41,7 @@ test("wrapped OpenAI responses.create strips orlune_metadata and sends telemetry
       },
     }
 
-    const orlune = createClient({
+    const orlune = OrluneClient({
       apiKey: "orlune_test_key",
       environment: "production",
       telemetryDelivery: {
@@ -96,6 +96,80 @@ test("wrapped OpenAI responses.create strips orlune_metadata and sends telemetry
   }
 })
 
+test("wrapping the same OpenAI client twice is idempotent", async () => {
+  const sentRequests = []
+  const originalFetch = globalThis.fetch
+
+  globalThis.fetch = async (url, init) => {
+    sentRequests.push({ url, init })
+
+    return {
+      ok: true,
+      status: 200,
+    }
+  }
+
+  try {
+    const openaiClient = {
+      responses: {
+        async create(input) {
+          assert.equal("orlune_metadata" in input, false)
+
+          return {
+            _request_id: "req_provider_idempotent_123",
+            id: "resp_idempotent_123",
+            model: "gpt-4.1-mini",
+            output: [
+              {
+                finish_reason: "stop",
+              },
+            ],
+            usage: {
+              input_tokens: 12,
+              output_tokens: 6,
+              total_tokens: 18,
+            },
+          }
+        },
+      },
+    }
+
+    const orlune = OrluneClient({
+      apiKey: "orlune_test_key",
+      environment: "production",
+      telemetryDelivery: {
+        mode: "sync",
+      },
+    })
+
+    const firstWrappedClient = orlune.wrap(openaiClient, {
+      defaults: {
+        feature: "Suggestions generation",
+      },
+    })
+    const secondWrappedClient = orlune.wrap(firstWrappedClient, {
+      defaults: {
+        feature: "Should not wrap twice",
+      },
+    })
+
+    assert.equal(secondWrappedClient, firstWrappedClient)
+
+    await secondWrappedClient.responses.create({
+      model: "gpt-4.1-mini",
+      input: "Hello",
+      orlune_metadata: {
+        customerId: "customer_idempotent_123",
+        eventType: "MODEL_CALL",
+      },
+    })
+
+    assert.equal(sentRequests.length, 1)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
 test("wrapped OpenAI responses.create rethrows provider error after sending failure telemetry", async () => {
   const sentRequests = []
   const originalFetch = globalThis.fetch
@@ -125,7 +199,7 @@ test("wrapped OpenAI responses.create rethrows provider error after sending fail
       },
     }
 
-    const orlune = createClient({
+    const orlune = OrluneClient({
       apiKey: "orlune_test_key",
       environment: "production",
       telemetryDelivery: {
@@ -217,7 +291,7 @@ test("wrapped OpenAI responses.create skips telemetry and warns when eventType i
       },
     }
 
-    const orlune = createClient({
+    const orlune = OrluneClient({
       apiKey: "orlune_test_key",
       environment: "production",
       telemetryDelivery: {
@@ -306,7 +380,7 @@ test("wrapped OpenAI chat.completions.create sends one terminal telemetry event 
       },
     }
 
-    const orlune = createClient({
+    const orlune = OrluneClient({
       apiKey: "orlune_test_key",
       environment: "production",
       telemetryDelivery: {
@@ -406,7 +480,7 @@ test("wrapped OpenAI responses.create sends one terminal telemetry event for str
       },
     }
 
-    const orlune = createClient({
+    const orlune = OrluneClient({
       apiKey: "orlune_test_key",
       environment: "production",
       telemetryDelivery: {
@@ -503,7 +577,7 @@ test("wrapped OpenAI streamed call sends canceled terminal telemetry when consum
       },
     }
 
-    const orlune = createClient({
+    const orlune = OrluneClient({
       apiKey: "orlune_test_key",
       environment: "production",
       telemetryDelivery: {

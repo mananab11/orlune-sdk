@@ -1,7 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 
-import { createClient } from "../dist/index.js"
+import { OrluneClient } from "../dist/index.js"
 
 function createOpenAIResponsesClient() {
   return {
@@ -43,7 +43,7 @@ test("background_flush can be explicitly drained with orlune.flush before the ti
   }
 
   try {
-    const orlune = createClient({
+    const orlune = OrluneClient({
       apiKey: "orlune_test_key",
       environment: "production",
       telemetryDelivery: {
@@ -91,7 +91,7 @@ test("background_flush delivers queued telemetry without explicit flush", async 
   }
 
   try {
-    const orlune = createClient({
+    const orlune = OrluneClient({
       apiKey: "orlune_test_key",
       environment: "production",
       telemetryDelivery: {
@@ -139,7 +139,7 @@ test("background_flush flushes pending telemetry when orlune.flush is called", a
   }
 
   try {
-    const orlune = createClient({
+    const orlune = OrluneClient({
       apiKey: "orlune_test_key",
       environment: "production",
       telemetryDelivery: {

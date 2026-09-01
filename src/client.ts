@@ -4,9 +4,11 @@ import { resolveEventsEndpoint } from "./config.js"
 import { getProviderAdapter } from "./providers/get-provider-adapter.js"
 import type {
   CreateClientOptions,
-  OrluneClient,
+  OrluneClient as OrluneClientInstance,
   WrapClientOptions,
 } from "./types.js"
+
+const ORLUNE_WRAPPED = Symbol.for("orlune.wrapped")
 
 function assertNonEmptyString(value: string, fieldName: string) {
   if (value.trim().length === 0) {
@@ -14,11 +16,24 @@ function assertNonEmptyString(value: string, fieldName: string) {
   }
 }
 
+function isAlreadyWrapped(client: object): boolean {
+  return client[ORLUNE_WRAPPED as keyof typeof client] === true
+}
+
+function markWrapped(client: object) {
+  Object.defineProperty(client, ORLUNE_WRAPPED, {
+    value: true,
+    enumerable: false,
+    configurable: false,
+    writable: false,
+  })
+}
+
 /**
  * Creates a client configured to send events to the Orlune ingestion API.
  * Event tracking methods will be layered on top of this object next.
  */
-export function createClient(options: CreateClientOptions): OrluneClient {
+export function OrluneClient(options: CreateClientOptions): OrluneClientInstance {
   assertNonEmptyString(options.apiKey, "apiKey")
 
   const endpoint = resolveEventsEndpoint(options.environment)
@@ -40,13 +55,17 @@ export function createClient(options: CreateClientOptions): OrluneClient {
 
   return {
     wrap<TClient extends object>(client: TClient, options?: WrapClientOptions): TClient {
+      if (isAlreadyWrapped(client)) {
+        return client
+      }
+
       const providerAdapter = getProviderAdapter(client)
 
       if (providerAdapter === null) {
         throw new Error("Unsupported provider client passed to wrap().")
       }
 
-      return options === undefined
+      const wrappedClient = options === undefined
         ? providerAdapter.wrap(client, {
             telemetryDispatcher,
           })
@@ -54,6 +73,10 @@ export function createClient(options: CreateClientOptions): OrluneClient {
             orluneOptions: options,
             telemetryDispatcher,
           })
+
+      markWrapped(wrappedClient)
+
+      return wrappedClient
     },
     async flush(): Promise<void> {
       await telemetryDispatcher.flush()

@@ -1,4 +1,4 @@
-export { createClient } from "./client.js"
+export { OrluneClient } from "./client.js"
 export {
   ORLUNE_PRODUCTION_EVENTS_URL,
   resolveEventsEndpoint,
@@ -14,7 +14,6 @@ export {
 export type {
   ClientEnvironment,
   CreateClientOptions,
-  OrluneClient,
   OrluneActivityMetadata,
   OrluneCallMetadata,
   OrluneWrapDefaults,
