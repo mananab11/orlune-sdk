@@ -55,5 +55,8 @@ export function createClient(options: CreateClientOptions): OrluneClient {
             telemetryDispatcher,
           })
     },
+    async flush(): Promise<void> {
+      await telemetryDispatcher.flush()
+    },
   }
 }

@@ -30,11 +30,22 @@ export type UsageApiFamily =
   | "OPENAI_AUDIO_TRANSCRIPTIONS"
   | "ANTHROPIC_MESSAGES"
 
-export type TelemetryDeliveryMode = "sync" | "manual_flush" | "background_flush"
+export type TelemetryDeliveryMode = "sync" | "background_flush"
 
-export type TelemetryDeliveryOptions = {
-  mode: TelemetryDeliveryMode
+export type SyncTelemetryDeliveryOptions = {
+  mode: "sync"
 }
+
+export type BackgroundFlushTelemetryDeliveryOptions = {
+  mode: "background_flush"
+  maxQueueSize?: number
+  flushIntervalMs?: number
+  maxRetries?: number
+}
+
+export type TelemetryDeliveryOptions =
+  | SyncTelemetryDeliveryOptions
+  | BackgroundFlushTelemetryDeliveryOptions
 
 export type WrapClientOptions = {
   defaults?: OrluneWrapDefaults
@@ -49,4 +60,5 @@ export type OrluneClient = {
     client: TClient,
     options?: WrapClientOptions,
   ): TClient
+  flush(): Promise<void>
 }
