@@ -1,5 +1,6 @@
 import type {
   OpenAIUsageEvent,
+  UsageCaptureType,
   UsageApiFamily,
   UsageEventOperation,
   UsageEventRequest,
@@ -22,6 +23,7 @@ type OpenAIUsageEventBuildResult = {
 
 type OpenAIErrorLike = {
   code?: unknown
+  name?: unknown
   status?: unknown
   request_id?: unknown
   requestId?: unknown
@@ -123,6 +125,12 @@ function deriveFailureStatus(error: unknown): UsageEventStatus {
     return "FAILED"
   }
 
+  const name = getString((error as OpenAIErrorLike).name)
+
+  if (name === "AbortError" || name === "APIUserAbortError") {
+    return "CANCELED"
+  }
+
   const status = typeof (error as OpenAIErrorLike).status === "number"
     ? (error as OpenAIErrorLike).status
     : undefined
@@ -166,7 +174,12 @@ function buildOperation(
 
   const operation: UsageEventOperation = {
     id: operationId,
-    status: status === "SUCCEEDED" ? "SUCCEEDED" : "FAILED",
+    status:
+      status === "SUCCEEDED"
+        ? "SUCCEEDED"
+        : status === "CANCELED"
+          ? "CANCELED"
+          : "FAILED",
     startedAt,
     completedAt,
   }
@@ -190,6 +203,7 @@ function buildBaseEvent(
   params: OpenAIEventBuilderParams,
   result: unknown,
   status: UsageEventStatus,
+  captureType: UsageCaptureType,
   errorCode?: string,
 ): OpenAIUsageEventBuildResult {
   const warnings: string[] = []
@@ -246,7 +260,7 @@ function buildBaseEvent(
     customerId,
     feature,
     eventType,
-    captureType: "RESPONSE",
+    captureType,
     apiFamily: params.apiFamily,
     model,
     status,
@@ -283,12 +297,20 @@ export function buildOpenAIUsageEventFromSuccess(
   params: OpenAIEventBuilderParams,
   result: unknown,
 ): OpenAIUsageEventBuildResult {
-  return buildBaseEvent(params, result, "SUCCEEDED")
+  return buildBaseEvent(params, result, "SUCCEEDED", "RESPONSE")
+}
+
+export function buildOpenAIUsageEventFromStreamSuccess(
+  params: OpenAIEventBuilderParams,
+  result: unknown,
+): OpenAIUsageEventBuildResult {
+  return buildBaseEvent(params, result, "SUCCEEDED", "STREAM_FINAL")
 }
 
 export function buildOpenAIUsageEventFromFailure(
   params: OpenAIEventBuilderParams,
   error: unknown,
+  captureType: UsageCaptureType = "RESPONSE",
 ): OpenAIUsageEventBuildResult {
   const warnings: string[] = []
   const customerId = getString(params.metadata?.customerId)
@@ -345,7 +367,7 @@ export function buildOpenAIUsageEventFromFailure(
     customerId,
     feature,
     eventType,
-    captureType: "RESPONSE",
+    captureType,
     apiFamily: params.apiFamily,
     model,
     status,

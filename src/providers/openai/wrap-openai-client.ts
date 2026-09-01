@@ -6,6 +6,7 @@ import {
   buildOpenAIUsageEventFromFailure,
   buildOpenAIUsageEventFromSuccess,
 } from "./build-openai-usage-event.js"
+import { wrapOpenAIStreamResult } from "./wrap-openai-stream-result.js"
 import { ensureActivityMetadata } from "../../metadata/ensure-activity-metadata.js"
 import { mergeOrluneMetadata } from "../../metadata/merge-orlune-metadata.js"
 import type {
@@ -22,6 +23,65 @@ function warnTelemetryIssues(warnings: string[]) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
+  return typeof value === "object" &&
+    value !== null &&
+    Symbol.asyncIterator in value &&
+    typeof (value as Record<PropertyKey, unknown>)[Symbol.asyncIterator] === "function"
+}
+
+function isStreamingInput(input: unknown): boolean {
+  return isRecord(input) && input.stream === true
+}
+
+function prepareOpenAIInputForForwarding<TInput>(
+  input: TInput,
+  apiFamily: UsageApiFamily,
+): TInput {
+  if (!isRecord(input)) {
+    return input
+  }
+
+  if (apiFamily !== "OPENAI_CHAT_COMPLETIONS" || input.stream !== true) {
+    return input
+  }
+
+  const streamOptions = isRecord(input.stream_options)
+    ? input.stream_options
+    : {}
+
+  return {
+    ...input,
+    stream_options: {
+      ...streamOptions,
+      include_usage: true,
+    },
+  } as TInput
+}
+
+function buildStreamWrapperParams(params: {
+  apiFamily: UsageApiFamily
+  input: unknown
+  metadata: WrappedClientRequestMetadata["orlune_metadata"] | undefined
+  startedAt: string
+  telemetryDispatcher: WrapProviderClientOptions["telemetryDispatcher"]
+}) {
+  return params.metadata === undefined
+    ? {
+        apiFamily: params.apiFamily,
+        input: params.input,
+        startedAt: params.startedAt,
+        telemetryDispatcher: params.telemetryDispatcher,
+      }
+    : {
+        apiFamily: params.apiFamily,
+        input: params.input,
+        metadata: params.metadata,
+        startedAt: params.startedAt,
+        telemetryDispatcher: params.telemetryDispatcher,
+      }
 }
 
 /**
@@ -67,10 +127,12 @@ function wrapCreateMethod(
 
     const [firstArg, ...restArgs] = args
     const { cleanInput, orluneMetadata } = stripWrappedRequestMetadata(firstArg)
+    const forwardedInput = prepareOpenAIInputForForwarding(cleanInput, apiFamily)
     const effectiveMetadata = ensureActivityMetadata(mergeOrluneMetadata(
       options.orluneOptions?.defaults,
       orluneMetadata,
     ))
+    const isStreaming = isStreamingInput(cleanInput)
 
     const startedAt = new Date().toISOString()
     const eventBuilderParams =
@@ -78,17 +140,30 @@ function wrapCreateMethod(
         ? {
             apiFamily,
             startedAt,
-            input: cleanInput,
+            input: forwardedInput,
           }
         : {
             apiFamily,
             metadata: effectiveMetadata,
             startedAt,
-            input: cleanInput,
+            input: forwardedInput,
           }
 
-    return Promise.resolve(method.apply(this, [cleanInput, ...restArgs]))
+    return Promise.resolve(method.apply(this, [forwardedInput, ...restArgs]))
       .then(async (result) => {
+        if (isStreaming && isAsyncIterable(result)) {
+          return wrapOpenAIStreamResult(
+            result,
+            buildStreamWrapperParams({
+              apiFamily,
+              input: forwardedInput,
+              metadata: effectiveMetadata,
+              startedAt,
+              telemetryDispatcher: options.telemetryDispatcher,
+            }),
+          )
+        }
+
         const completedAt = new Date().toISOString()
         const usageEventResult = buildOpenAIUsageEventFromSuccess(
           {

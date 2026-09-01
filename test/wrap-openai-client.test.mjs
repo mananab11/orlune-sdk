@@ -249,3 +249,295 @@ test("wrapped OpenAI responses.create skips telemetry and warns when eventType i
     console.warn = originalWarn
   }
 })
+
+test("wrapped OpenAI chat.completions.create sends one terminal telemetry event for streamed success", async () => {
+  const sentRequests = []
+  const originalFetch = globalThis.fetch
+
+  globalThis.fetch = async (url, init) => {
+    sentRequests.push({ url, init })
+
+    return {
+      ok: true,
+      status: 200,
+    }
+  }
+
+  try {
+    const openaiClient = {
+      chat: {
+        completions: {
+          create(input) {
+            assert.equal("orlune_metadata" in input, false)
+            assert.equal(input.stream, true)
+            assert.equal(input.stream_options.include_usage, true)
+
+            return {
+              async *[Symbol.asyncIterator]() {
+                yield {
+                  id: "chatcmpl_stream_123",
+                  model: "gpt-4.1-mini",
+                  choices: [
+                    {
+                      delta: { content: "Hello" },
+                      finish_reason: null,
+                    },
+                  ],
+                }
+                yield {
+                  id: "chatcmpl_stream_123",
+                  model: "gpt-4.1-mini",
+                  choices: [
+                    {
+                      delta: {},
+                      finish_reason: "stop",
+                    },
+                  ],
+                  usage: {
+                    prompt_tokens: 100,
+                    completion_tokens: 30,
+                    total_tokens: 130,
+                  },
+                }
+              },
+            }
+          },
+        },
+      },
+    }
+
+    const orlune = createClient({
+      apiKey: "orlune_test_key",
+      environment: "production",
+      telemetryDelivery: {
+        mode: "sync",
+      },
+    })
+
+    const wrappedClient = orlune.wrap(openaiClient, {
+      defaults: {
+        feature: "Chat assistant",
+      },
+    })
+
+    const stream = await wrappedClient.chat.completions.create({
+      model: "gpt-4.1-mini",
+      messages: [{ role: "user", content: "Hello" }],
+      stream: true,
+      orlune_metadata: {
+        customerId: "customer_stream_123",
+        eventType: "CHAT_STREAM",
+      },
+    })
+
+    const chunks = []
+
+    for await (const chunk of stream) {
+      chunks.push(chunk)
+    }
+
+    assert.equal(chunks.length, 2)
+    assert.equal(sentRequests.length, 1)
+
+    const payload = JSON.parse(sentRequests[0].init.body)
+
+    assert.equal(payload.event.apiFamily, "OPENAI_CHAT_COMPLETIONS")
+    assert.equal(payload.event.captureType, "STREAM_FINAL")
+    assert.equal(payload.event.status, "SUCCEEDED")
+    assert.equal(payload.event.requestId, "chatcmpl_stream_123")
+    assert.equal(payload.event.providerEvent.openai.finishReason, "stop")
+    assert.deepEqual(payload.event.providerEvent.openai.usage, {
+      prompt_tokens: 100,
+      completion_tokens: 30,
+      total_tokens: 130,
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test("wrapped OpenAI responses.create sends one terminal telemetry event for streamed success", async () => {
+  const sentRequests = []
+  const originalFetch = globalThis.fetch
+
+  globalThis.fetch = async (url, init) => {
+    sentRequests.push({ url, init })
+
+    return {
+      ok: true,
+      status: 200,
+    }
+  }
+
+  try {
+    const openaiClient = {
+      responses: {
+        create(input) {
+          assert.equal("orlune_metadata" in input, false)
+          assert.equal(input.stream, true)
+
+          return {
+            async *[Symbol.asyncIterator]() {
+              yield {
+                type: "response.output_text.delta",
+                delta: "Hello",
+              }
+              yield {
+                type: "response.completed",
+                response: {
+                  _request_id: "req_response_stream_123",
+                  id: "resp_stream_123",
+                  model: "gpt-4.1-mini",
+                  output: [
+                    {
+                      finish_reason: "stop",
+                    },
+                  ],
+                  usage: {
+                    input_tokens: 80,
+                    output_tokens: 20,
+                    total_tokens: 100,
+                  },
+                },
+              }
+            },
+          }
+        },
+      },
+    }
+
+    const orlune = createClient({
+      apiKey: "orlune_test_key",
+      environment: "production",
+      telemetryDelivery: {
+        mode: "sync",
+      },
+    })
+
+    const wrappedClient = orlune.wrap(openaiClient, {
+      defaults: {
+        feature: "Suggestions generation",
+      },
+    })
+
+    const stream = await wrappedClient.responses.create({
+      model: "gpt-4.1-mini",
+      input: "Hello",
+      stream: true,
+      orlune_metadata: {
+        customerId: "customer_response_stream_123",
+        eventType: "RESPONSE_STREAM",
+      },
+    })
+
+    const events = []
+
+    for await (const event of stream) {
+      events.push(event)
+    }
+
+    assert.equal(events.length, 2)
+    assert.equal(sentRequests.length, 1)
+
+    const payload = JSON.parse(sentRequests[0].init.body)
+
+    assert.equal(payload.event.apiFamily, "OPENAI_RESPONSES")
+    assert.equal(payload.event.captureType, "STREAM_FINAL")
+    assert.equal(payload.event.status, "SUCCEEDED")
+    assert.equal(payload.event.requestId, "req_response_stream_123")
+    assert.equal(payload.event.providerEvent.openai.finishReason, "stop")
+    assert.deepEqual(payload.event.providerEvent.openai.usage, {
+      input_tokens: 80,
+      output_tokens: 20,
+      total_tokens: 100,
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test("wrapped OpenAI streamed call sends canceled terminal telemetry when consumer stops early", async () => {
+  const sentRequests = []
+  const originalFetch = globalThis.fetch
+
+  globalThis.fetch = async (url, init) => {
+    sentRequests.push({ url, init })
+
+    return {
+      ok: true,
+      status: 200,
+    }
+  }
+
+  try {
+    const openaiClient = {
+      chat: {
+        completions: {
+          create() {
+            return {
+              async *[Symbol.asyncIterator]() {
+                yield {
+                  id: "chatcmpl_stream_cancel_123",
+                  model: "gpt-4.1-mini",
+                  choices: [
+                    {
+                      delta: { content: "Hello" },
+                      finish_reason: null,
+                    },
+                  ],
+                }
+                yield {
+                  id: "chatcmpl_stream_cancel_123",
+                  model: "gpt-4.1-mini",
+                  choices: [
+                    {
+                      delta: { content: "World" },
+                      finish_reason: null,
+                    },
+                  ],
+                }
+              },
+            }
+          },
+        },
+      },
+    }
+
+    const orlune = createClient({
+      apiKey: "orlune_test_key",
+      environment: "production",
+      telemetryDelivery: {
+        mode: "sync",
+      },
+    })
+
+    const wrappedClient = orlune.wrap(openaiClient, {
+      defaults: {
+        feature: "Chat assistant",
+      },
+    })
+
+    const stream = await wrappedClient.chat.completions.create({
+      model: "gpt-4.1-mini",
+      messages: [{ role: "user", content: "Hello" }],
+      stream: true,
+      orlune_metadata: {
+        customerId: "customer_stream_cancel_123",
+        eventType: "CHAT_STREAM",
+      },
+    })
+
+    for await (const _chunk of stream) {
+      break
+    }
+
+    assert.equal(sentRequests.length, 1)
+
+    const payload = JSON.parse(sentRequests[0].init.body)
+
+    assert.equal(payload.event.captureType, "STREAM_FINAL")
+    assert.equal(payload.event.status, "CANCELED")
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
