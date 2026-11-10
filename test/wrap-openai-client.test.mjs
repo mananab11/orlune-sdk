@@ -18,6 +18,7 @@ test("wrapped OpenAI responses.create strips orlune_metadata and sends telemetry
 
   try {
     const openaiClient = {
+      baseURL: "https://api.openai.com/v1",
       responses: {
         async create(input) {
           assert.equal("orlune_metadata" in input, false)
@@ -68,7 +69,7 @@ test("wrapped OpenAI responses.create strips orlune_metadata and sends telemetry
     assert.equal(sentRequests.length, 1)
     assert.equal(
       sentRequests[0].url,
-      "https://du37zudv2g.execute-api.us-west-2.amazonaws.com/v1/events",
+      "https://dx02lonqo8.execute-api.us-east-1.amazonaws.com/v1/events",
     )
     assert.equal(sentRequests[0].init.method, "POST")
     assert.equal(sentRequests[0].init.headers.authorization, "Bearer orlune_test_key")
@@ -111,6 +112,7 @@ test("wrapping the same OpenAI client twice is idempotent", async () => {
 
   try {
     const openaiClient = {
+      baseURL: "https://api.openai.com/v1",
       responses: {
         async create(input) {
           assert.equal("orlune_metadata" in input, false)
@@ -147,11 +149,8 @@ test("wrapping the same OpenAI client twice is idempotent", async () => {
         feature: "Suggestions generation",
       },
     })
-    const secondWrappedClient = orlune.wrap(firstWrappedClient, {
-      defaults: {
-        feature: "Should not wrap twice",
-      },
-    })
+    assert.throws(() => orlune.wrap(firstWrappedClient, { defaults: { feature: "Should not wrap twice" } }), /different settings/)
+    const secondWrappedClient = orlune.wrap(firstWrappedClient)
 
     assert.equal(secondWrappedClient, firstWrappedClient)
 
@@ -191,6 +190,7 @@ test("wrapped OpenAI responses.create rethrows provider error after sending fail
     })
 
     const openaiClient = {
+      baseURL: "https://api.openai.com/v1",
       responses: {
         async create(input) {
           assert.equal("orlune_metadata" in input, false)
@@ -268,6 +268,7 @@ test("wrapped OpenAI responses.create skips telemetry and warns when eventType i
 
   try {
     const openaiClient = {
+      baseURL: "https://api.openai.com/v1",
       responses: {
         async create(input) {
           assert.equal("orlune_metadata" in input, false)
@@ -339,6 +340,7 @@ test("wrapped OpenAI chat.completions.create sends one terminal telemetry event 
 
   try {
     const openaiClient = {
+      baseURL: "https://api.openai.com/v1",
       chat: {
         completions: {
           create(input) {
@@ -445,6 +447,7 @@ test("wrapped OpenAI responses.create sends one terminal telemetry event for str
 
   try {
     const openaiClient = {
+      baseURL: "https://api.openai.com/v1",
       responses: {
         create(input) {
           assert.equal("orlune_metadata" in input, false)
@@ -545,6 +548,7 @@ test("wrapped OpenAI streamed call sends canceled terminal telemetry when consum
 
   try {
     const openaiClient = {
+      baseURL: "https://api.openai.com/v1",
       chat: {
         completions: {
           create() {

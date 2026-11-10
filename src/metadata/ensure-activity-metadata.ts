@@ -1,4 +1,4 @@
-import type { OrluneCallMetadata } from "../types.js"
+import type { OrluneActivityMetadata, OrluneCallMetadata } from "../types.js"
 
 function randomActivityId(): string {
   return crypto.randomUUID()
@@ -11,7 +11,7 @@ function randomActivityId(): string {
  */
 export function ensureActivityMetadata(
   metadata?: OrluneCallMetadata,
-): OrluneCallMetadata | undefined {
+): OrluneCallMetadata & { activity: OrluneActivityMetadata & { id: string } } {
   if (!metadata) {
     return {
       activity: {

@@ -1,9 +1,13 @@
-export type ClientEnvironment = "production" | "sandbox"
+import type { EvaluationOptions, EvaluationRequest, EvaluationResult, GuardrailOptions } from "./guardrails.js"
+import type { WrappedProviderClient } from "./providers/provider-client-types.js"
+
+export type ClientEnvironment = "production" | "development" | "sandbox"
 
 export type CreateClientOptions = {
   apiKey: string
   environment: ClientEnvironment
   telemetryDelivery?: TelemetryDeliveryOptions
+  evaluationTimeoutMs?: number
 }
 
 export type OrluneActivityMetadata = {
@@ -34,10 +38,14 @@ export type TelemetryDeliveryMode = "sync" | "background_flush"
 
 export type SyncTelemetryDeliveryOptions = {
   mode: "sync"
+  /** Per-send timeout in milliseconds. Defaults to 5000. */
+  timeoutMs?: number
 }
 
 export type BackgroundFlushTelemetryDeliveryOptions = {
   mode: "background_flush"
+  /** Per-send timeout in milliseconds, including each retry. Defaults to 5000. */
+  timeoutMs?: number
   maxQueueSize?: number
   flushIntervalMs?: number
   maxRetries?: number
@@ -49,6 +57,7 @@ export type TelemetryDeliveryOptions =
 
 export type WrapClientOptions = {
   defaults?: OrluneWrapDefaults
+  guardrails?: GuardrailOptions
 }
 
 export type WrappedClientRequestMetadata = {
@@ -56,9 +65,10 @@ export type WrappedClientRequestMetadata = {
 }
 
 export type OrluneClient = {
+  evaluate(request: EvaluationRequest, options?: EvaluationOptions): Promise<EvaluationResult>
   wrap<TClient extends object>(
     client: TClient,
     options?: WrapClientOptions,
-  ): TClient
+  ): WrappedProviderClient<TClient>
   flush(): Promise<void>
 }

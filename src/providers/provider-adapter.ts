@@ -1,11 +1,14 @@
 import type { TelemetryDispatcher } from "../internal/telemetry-dispatcher.js"
-import type { WrapClientOptions } from "../types.js"
+import type { OrluneClient, WrapClientOptions } from "../types.js"
 
 export type WrapProviderClientOptions = {
   orluneOptions?: WrapClientOptions
   telemetryDispatcher: TelemetryDispatcher
+  evaluate?: OrluneClient["evaluate"]
 }
 
 export type ProviderAdapter = {
-  wrap<TClient extends object>(client: TClient, options: WrapProviderClientOptions): TClient
+  provider: string
+  matches(client: object): boolean
+  wrap(client: object, options: WrapProviderClientOptions): object
 }

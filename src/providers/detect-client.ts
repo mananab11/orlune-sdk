@@ -1,20 +1,6 @@
-export type SupportedProvider = "OPENAI"
-
-import type { MaybeOpenAIClient } from "./openai/openai-client-shape.js"
-
-function hasFunction(value: unknown): value is (...args: unknown[]) => unknown {
-  return typeof value === "function"
-}
+import { getProviderAdapter, type SupportedProvider } from "./get-provider-adapter.js"
+export type { SupportedProvider } from "./get-provider-adapter.js"
 
 export function detectSupportedProvider(client: object): SupportedProvider | null {
-  const maybeOpenAI = client as MaybeOpenAIClient
-
-  if (
-    hasFunction(maybeOpenAI.responses?.create) ||
-    hasFunction(maybeOpenAI.chat?.completions?.create)
-  ) {
-    return "OPENAI"
-  }
-
-  return null
+  return getProviderAdapter(client)?.provider ?? null
 }

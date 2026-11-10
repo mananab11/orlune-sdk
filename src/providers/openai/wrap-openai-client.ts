@@ -9,11 +9,17 @@ import {
 import { wrapOpenAIStreamResult } from "./wrap-openai-stream-result.js"
 import { ensureActivityMetadata } from "../../metadata/ensure-activity-metadata.js"
 import { mergeOrluneMetadata } from "../../metadata/merge-orlune-metadata.js"
+import { stripWrappedRequestMetadata } from "../../metadata/strip-wrapped-request-metadata.js"
 import type {
   UsageApiFamily,
   WrappedClientRequestMetadata,
 } from "../../types.js"
 import type { WrapProviderClientOptions } from "../provider-adapter.js"
+import { checkGuardrails } from "../../internal/check-guardrails.js"
+import { OrluneEvaluationException } from "../../guardrails.js"
+import { extractOpenAIPrompt } from "./extract-prompt.js"
+import { observeOpenAICall } from "./observe-openai-call.js"
+import type { WrappedOpenAIClient } from "./openai-client-types.js"
 
 function warnTelemetryIssues(warnings: string[]) {
   for (const warning of warnings) {
@@ -84,33 +90,6 @@ function buildStreamWrapperParams(params: {
       }
 }
 
-/**
- * Extract SDK-only metadata before forwarding the payload to the real provider SDK.
- */
-export function stripWrappedRequestMetadata<TInput>(
-  input: TInput,
-): {
-  cleanInput: TInput
-  orluneMetadata: WrappedClientRequestMetadata["orlune_metadata"] | undefined
-} {
-  if (!isRecord(input) || !("orlune_metadata" in input)) {
-    return {
-      cleanInput: input,
-      orluneMetadata: undefined,
-    }
-  }
-
-  const { orlune_metadata, ...rest } = input
-
-  return {
-    cleanInput: rest as TInput,
-    orluneMetadata:
-      orlune_metadata && typeof orlune_metadata === "object"
-        ? (orlune_metadata as WrappedClientRequestMetadata["orlune_metadata"])
-        : undefined,
-  }
-}
-
 function wrapCreateMethod(
   method: OpenAICreateMethod | undefined,
   apiFamily: UsageApiFamily,
@@ -122,6 +101,9 @@ function wrapCreateMethod(
 
   return function wrappedOpenAICreate(this: unknown, ...args: unknown[]) {
     if (args.length === 0) {
+      if (options.orluneOptions?.guardrails?.enabled) {
+        return Promise.reject(new OrluneEvaluationException("Guarded calls require customer metadata.", "INVALID_REQUEST"))
+      }
       return method.apply(this, args)
     }
 
@@ -134,7 +116,7 @@ function wrapCreateMethod(
     ))
     const isStreaming = isStreamingInput(cleanInput)
 
-    const startedAt = new Date().toISOString()
+    let startedAt = new Date().toISOString()
     const eventBuilderParams =
       effectiveMetadata === undefined
         ? {
@@ -149,8 +131,38 @@ function wrapCreateMethod(
             input: forwardedInput,
           }
 
-    return Promise.resolve(method.apply(this, [forwardedInput, ...restArgs]))
-      .then(async (result) => {
+    const onError = async (error: unknown) => {
+      const usageEventResult = buildOpenAIUsageEventFromFailure(
+        { ...eventBuilderParams, completedAt: new Date().toISOString() }, error,
+      )
+      warnTelemetryIssues(usageEventResult.warnings)
+      if (usageEventResult.event) {
+        await options.telemetryDispatcher.dispatch(usageEventResult.event)
+      }
+    }
+
+    return observeOpenAICall({
+      start: async () => {
+        // Preflight is outside provider error handling: a denied call has no provider event.
+        if (options.orluneOptions?.guardrails?.enabled) {
+          if (!options.evaluate) throw new OrluneEvaluationException("Guardrail evaluator is not configured.", "INVALID_REQUEST")
+          const requestOptions = restArgs[0]
+          const signal = isRecord(requestOptions) && requestOptions.signal instanceof AbortSignal
+            ? requestOptions.signal : undefined
+          await checkGuardrails(options.evaluate, options.orluneOptions.guardrails, effectiveMetadata, signal,
+            extractOpenAIPrompt(cleanInput, apiFamily))
+        }
+        startedAt = new Date().toISOString()
+        eventBuilderParams.startedAt = startedAt
+        try {
+          // Keep the provider promise inside an object to avoid assimilating it.
+          return { value: method.apply(this, [forwardedInput, ...restArgs]) }
+        } catch (error) {
+          await onError(error)
+          throw error
+        }
+      },
+      onResult: async (result) => {
         if (isStreaming && isAsyncIterable(result)) {
           return wrapOpenAIStreamResult(
             result,
@@ -175,36 +187,13 @@ function wrapCreateMethod(
         warnTelemetryIssues(usageEventResult.warnings)
 
         if (usageEventResult.event) {
-          try {
-            await options.telemetryDispatcher.dispatch(usageEventResult.event)
-          } catch {
-            // Telemetry failures must not change provider call behavior.
-          }
+          await options.telemetryDispatcher.dispatch(usageEventResult.event)
         }
 
         return result
-      })
-      .catch(async (error) => {
-        const completedAt = new Date().toISOString()
-        const usageEventResult = buildOpenAIUsageEventFromFailure(
-          {
-            ...eventBuilderParams,
-            completedAt,
-          },
-          error,
-        )
-        warnTelemetryIssues(usageEventResult.warnings)
-
-        if (usageEventResult.event) {
-          try {
-            await options.telemetryDispatcher.dispatch(usageEventResult.event)
-          } catch {
-            // Telemetry failures must not change provider call behavior.
-          }
-        }
-
-        throw error
-      })
+      },
+      onError,
+    })
   }
 }
 
@@ -214,7 +203,7 @@ function wrapCreateMethod(
 export function wrapOpenAIClient<TClient extends object>(
   client: TClient,
   options: WrapProviderClientOptions,
-): TClient {
+): WrappedOpenAIClient<TClient> {
   const openAIClient = client as TClient & MaybeOpenAIClient
 
   if (openAIClient.responses?.create) {
@@ -241,5 +230,5 @@ export function wrapOpenAIClient<TClient extends object>(
     }
   }
 
-  return openAIClient
+  return openAIClient as WrappedOpenAIClient<TClient>
 }

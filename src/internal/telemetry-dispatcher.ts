@@ -24,10 +24,6 @@ const DEFAULT_MAX_QUEUE_SIZE = 500
 const DEFAULT_FLUSH_INTERVAL_MS = 1000
 const DEFAULT_MAX_RETRIES = 2
 
-function warn(message: string) {
-  console.warn(`[orlune] ${message}`)
-}
-
 function getTelemetryDeliveryMode(
   telemetryDelivery?: TelemetryDeliveryOptions,
 ): TelemetryDeliveryOptions["mode"] {
@@ -35,16 +31,20 @@ function getTelemetryDeliveryMode(
 }
 
 function getQueueOptions(
-  telemetryDelivery: BackgroundFlushTelemetryDeliveryOptions | undefined,
+  telemetryDelivery: BackgroundFlushTelemetryDeliveryOptions,
 ) {
-  return {
-    maxQueueSize: telemetryDelivery?.maxQueueSize ?? DEFAULT_MAX_QUEUE_SIZE,
-    flushIntervalMs:
-      telemetryDelivery && telemetryDelivery.mode === "background_flush"
-        ? telemetryDelivery.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS
-        : undefined,
-    maxRetries: telemetryDelivery?.maxRetries ?? DEFAULT_MAX_RETRIES,
+  const options = {
+    maxQueueSize: telemetryDelivery.maxQueueSize ?? DEFAULT_MAX_QUEUE_SIZE,
+    flushIntervalMs: telemetryDelivery.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS,
+    maxRetries: telemetryDelivery.maxRetries ?? DEFAULT_MAX_RETRIES,
   }
+  for (const [field, value] of Object.entries(options)) {
+    const min = field === "maxRetries" ? 0 : 1
+    if (!Number.isSafeInteger(value) || value < min || (field === "flushIntervalMs" && value > 2_147_483_647)) {
+      throw new Error(`telemetryDelivery.${field} must be ${min === 0 ? "a non-negative" : "a positive"} safe integer${field === "flushIntervalMs" ? " no greater than 2147483647" : ""}.`)
+    }
+  }
+  return options
 }
 
 function delay(ms: number) {
@@ -71,11 +71,7 @@ function createQueuedTelemetryDispatcher(
   }
 
   function scheduleBackgroundFlush() {
-    if (params.telemetryDelivery.mode !== "background_flush") {
-      return
-    }
-
-    if (flushTimer !== null || options.flushIntervalMs === undefined) {
+    if (flushTimer !== null) {
       return
     }
 
@@ -88,8 +84,8 @@ function createQueuedTelemetryDispatcher(
   function enqueue(event: UsageEventRequest) {
     if (queue.length >= options.maxQueueSize) {
       queue.shift()
-      warn(
-        `Telemetry queue reached maxQueueSize=${options.maxQueueSize}. Dropping oldest queued event.`,
+      console.error(
+        "[orlune] Telemetry queue full; oldest queued event dropped.",
       )
     }
 
@@ -104,19 +100,15 @@ function createQueuedTelemetryDispatcher(
       try {
         await params.transport.send(entry.event)
         return
-      } catch (error) {
+      } catch {
         entry.attemptCount += 1
 
         if (entry.attemptCount > options.maxRetries) {
-          const requestId = entry.event.event.requestId
-          const message = error instanceof Error ? error.message : "Unknown telemetry error."
-          warn(
-            `Dropping telemetry event after ${options.maxRetries} retries for requestId=${requestId}. ${message}`,
-          )
+          console.error("[orlune] Telemetry delivery failed; retries exhausted.")
           return
         }
 
-        const backoffMs = 250 * 2 ** (entry.attemptCount - 1)
+        const backoffMs = Math.min(30_000, 250 * 2 ** Math.min(entry.attemptCount - 1, 7))
         await delay(backoffMs)
       }
     }
@@ -174,13 +166,19 @@ export function createTelemetryDispatcher(
   if (mode === "sync") {
     return {
       async dispatch(event: UsageEventRequest): Promise<void> {
-        await params.transport.send(event)
+        try {
+          await params.transport.send(event)
+        } catch {
+          console.error("[orlune] Telemetry delivery failed.")
+        }
       },
       async flush(): Promise<void> {
         return
       },
     }
   }
+
+  if (mode !== "background_flush") throw new Error("Unsupported telemetryDelivery.mode.")
 
   return createQueuedTelemetryDispatcher({
     ...params,

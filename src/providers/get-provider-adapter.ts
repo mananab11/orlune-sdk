@@ -1,17 +1,9 @@
-import { detectSupportedProvider, type SupportedProvider } from "./detect-client.js"
-import type { ProviderAdapter } from "./provider-adapter.js"
 import { openAIProviderAdapter } from "./openai/openai-provider-adapter.js"
+import type { ProviderAdapter } from "./provider-adapter.js"
 
-const providerAdapters: Record<SupportedProvider, ProviderAdapter> = {
-  OPENAI: openAIProviderAdapter,
-}
+const providerAdapters = [openAIProviderAdapter] as const
+export type SupportedProvider = (typeof providerAdapters)[number]["provider"]
 
-export function getProviderAdapter(client: object): ProviderAdapter | null {
-  const provider = detectSupportedProvider(client)
-
-  if (provider === null) {
-    return null
-  }
-
-  return providerAdapters[provider]
+export function getProviderAdapter(client: object): (ProviderAdapter & { provider: SupportedProvider }) | null {
+  return providerAdapters.find(adapter => adapter.matches(client)) ?? null
 }

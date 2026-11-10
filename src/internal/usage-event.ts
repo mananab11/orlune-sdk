@@ -50,6 +50,9 @@ type OpenAIUsageEvent = {
     openai: {
       usage: Record<string, unknown>
       finishReason?: string
+      serviceTier?: string
+      requestedServiceTier?: string
+      hasAdditionalCharges?: boolean
     }
   }
 }

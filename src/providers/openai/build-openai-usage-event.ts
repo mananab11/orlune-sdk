@@ -26,6 +26,7 @@ type OpenAIErrorLike = {
   name?: unknown
   status?: unknown
   request_id?: unknown
+  requestID?: unknown
   requestId?: unknown
 }
 
@@ -47,7 +48,22 @@ function getString(value: unknown): string | undefined {
 }
 
 function getUsageRecord(value: unknown): Record<string, unknown> {
-  return isRecord(value) ? value : {}
+  // Queued telemetry must not share mutable usage details with the caller.
+  return isRecord(value) ? structuredClone(value) : {}
+}
+
+function pricingContext(input: unknown, result?: unknown) {
+  const request = isRecord(input) ? input : {}
+  const response = isRecord(result) ? result : {}
+  const serviceTier = getString(response.service_tier)
+  const requestedServiceTier = getString(request.service_tier) ?? "auto"
+  const tools = Array.isArray(request.tools) ? request.tools : []
+  const output = Array.isArray(response.output) ? response.output : []
+  // Only capture billing context, never tool arguments or generated content.
+  const hasAdditionalCharges = tools.some(tool => isRecord(tool) && !["function", "custom"].includes(String(tool.type))) ||
+    output.some(item => isRecord(item) && ["web_search_call", "file_search_call", "code_interpreter_call", "image_generation_call"].includes(String(item.type))) ||
+    request.web_search_options !== undefined || (typeof request.model === "string" && request.model.includes("search"))
+  return { ...(serviceTier ? { serviceTier } : {}), requestedServiceTier, hasAdditionalCharges }
 }
 
 function createGeneratedRequestId(): string {
@@ -64,6 +80,7 @@ function deriveOpenAIRequestId(result: unknown, error: unknown): string | undefi
 
   if (isRecord(error)) {
     return (
+      getString((error as OpenAIErrorLike).requestID) ??
       getString((error as OpenAIErrorLike).request_id) ??
       getString((error as OpenAIErrorLike).requestId)
     )
@@ -126,8 +143,10 @@ function deriveFailureStatus(error: unknown): UsageEventStatus {
   }
 
   const name = getString((error as OpenAIErrorLike).name)
+  // OpenAI error subclasses may retain Error.name rather than their class name.
+  const className = typeof error.constructor === "function" ? error.constructor.name : undefined
 
-  if (name === "AbortError" || name === "APIUserAbortError") {
+  if (name === "AbortError" || name === "APIUserAbortError" || className === "APIUserAbortError") {
     return "CANCELED"
   }
 
@@ -135,7 +154,7 @@ function deriveFailureStatus(error: unknown): UsageEventStatus {
     ? (error as OpenAIErrorLike).status
     : undefined
 
-  if (status === 408) {
+  if (name === "APIConnectionTimeoutError" || className === "APIConnectionTimeoutError" || status === 408) {
     return "TIMED_OUT"
   }
 
@@ -267,6 +286,7 @@ function buildBaseEvent(
     providerEvent: {
       openai: {
         usage: isRecord(result) ? getUsageRecord((result as OpenAIResponseLike).usage) : {},
+        ...pricingContext(params.input, result),
       },
     },
   }
@@ -297,14 +317,31 @@ export function buildOpenAIUsageEventFromSuccess(
   params: OpenAIEventBuilderParams,
   result: unknown,
 ): OpenAIUsageEventBuildResult {
+  if (params.apiFamily === "OPENAI_RESPONSES" && isRecord(result)) {
+    const status = getString(result.status)
+    if (status === "queued" || status === "in_progress") {
+      return {
+        event: null,
+        warnings: ["Skipping non-terminal OpenAI response telemetry. Background Responses completion tracking is not supported."],
+      }
+    }
+    if (status === "failed" || status === "incomplete" || status === "cancelled") {
+      const reason = status === "incomplete"
+        ? (isRecord(result.incomplete_details) ? getString(result.incomplete_details.reason) : undefined) ?? "RESPONSE_INCOMPLETE"
+        : isRecord(result.error) ? getString(result.error.code) : undefined
+      return buildBaseEvent(params, result, status === "cancelled" ? "CANCELED" : "FAILED", "RESPONSE", reason)
+    }
+  }
   return buildBaseEvent(params, result, "SUCCEEDED", "RESPONSE")
 }
 
-export function buildOpenAIUsageEventFromStreamSuccess(
+export function buildOpenAIUsageEventFromStreamResult(
   params: OpenAIEventBuilderParams,
   result: unknown,
+  status: UsageEventStatus,
+  errorCode?: string,
 ): OpenAIUsageEventBuildResult {
-  return buildBaseEvent(params, result, "SUCCEEDED", "STREAM_FINAL")
+  return buildBaseEvent(params, result, status, "STREAM_FINAL", errorCode)
 }
 
 export function buildOpenAIUsageEventFromFailure(
@@ -374,6 +411,7 @@ export function buildOpenAIUsageEventFromFailure(
     providerEvent: {
       openai: {
         usage: {},
+        ...pricingContext(params.input),
       },
     },
   }

@@ -1,6 +1,6 @@
 import {
   buildOpenAIUsageEventFromFailure,
-  buildOpenAIUsageEventFromStreamSuccess,
+  buildOpenAIUsageEventFromStreamResult,
 } from "./build-openai-usage-event.js"
 import type { TelemetryDispatcher } from "../../internal/telemetry-dispatcher.js"
 import type { UsageApiFamily } from "../../internal/usage-event.js"
@@ -14,7 +14,7 @@ type OpenAIStreamWrapperParams = {
   telemetryDispatcher: TelemetryDispatcher
 }
 
-type ResponsesCompletedEvent = {
+type ResponsesTerminalEvent = {
   type?: unknown
   response?: unknown
 }
@@ -74,11 +74,12 @@ function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
     typeof (value as Record<PropertyKey, unknown>)[Symbol.asyncIterator] === "function"
 }
 
-function isTerminalResponsesCompletedEvent(event: unknown): event is ResponsesCompletedEvent {
-  return isRecord(event) && event.type === "response.completed" && isRecord(event.response)
+function isTerminalResponsesEvent(event: unknown): event is ResponsesTerminalEvent {
+  return isRecord(event) && ["response.completed", "response.incomplete", "response.failed"].includes(String(event.type)) && isRecord(event.response)
 }
 
 function createChatCompletionStreamSnapshot(state: {
+  serviceTier?: string
   requestId?: string
   model?: string
   usage?: Record<string, unknown>
@@ -89,6 +90,7 @@ function createChatCompletionStreamSnapshot(state: {
   }
 
   return {
+    ...(state.serviceTier ? { service_tier: state.serviceTier } : {}),
     ...(state.requestId ? { id: state.requestId } : {}),
     ...(state.model ? { model: state.model } : {}),
     ...(state.usage ? { usage: state.usage } : { usage: {} }),
@@ -107,6 +109,7 @@ function createChatCompletionStreamSnapshot(state: {
 function observeChatCompletionChunk(
   chunk: unknown,
   state: {
+    serviceTier?: string
     requestId?: string
     model?: string
     usage?: Record<string, unknown>
@@ -116,6 +119,9 @@ function observeChatCompletionChunk(
   if (!isRecord(chunk)) {
     return
   }
+
+  const serviceTier = getString(chunk.service_tier)
+  if (serviceTier) state.serviceTier = serviceTier
 
   const requestId = getString((chunk as ChatCompletionChunkLike).id)
 
@@ -167,7 +173,14 @@ export function wrapOpenAIStreamResult<TResult extends object>(
   }
 
   let telemetrySettled = false
+  let completionObserved = false
+  const finishedChoices = new Set<number>()
+  const expectedChoices = isRecord(params.input) && typeof params.input.n === "number"
+    ? params.input.n : 1
+  let terminalStatus: "SUCCEEDED" | "FAILED" = "SUCCEEDED"
+  let terminalErrorCode: string | undefined
   const chatCompletionState: {
+    serviceTier?: string
     requestId?: string
     model?: string
     usage?: Record<string, unknown>
@@ -175,7 +188,7 @@ export function wrapOpenAIStreamResult<TResult extends object>(
   } = {}
   let finalResponsesResponse: Record<string, unknown> | null = null
 
-  async function dispatchSuccess() {
+  async function dispatchResult() {
     if (telemetrySettled) {
       return
     }
@@ -193,7 +206,7 @@ export function wrapOpenAIStreamResult<TResult extends object>(
 
     telemetrySettled = true
 
-    const usageEventResult = buildOpenAIUsageEventFromStreamSuccess(
+    const usageEventResult = buildOpenAIUsageEventFromStreamResult(
       buildEventBuilderParams({
         apiFamily: params.apiFamily,
         completedAt,
@@ -202,20 +215,24 @@ export function wrapOpenAIStreamResult<TResult extends object>(
         startedAt: params.startedAt,
       }),
       successSource,
+      terminalStatus,
+      terminalErrorCode,
     )
     warnTelemetryIssues(usageEventResult.warnings)
 
     if (usageEventResult.event) {
-      try {
-        await params.telemetryDispatcher.dispatch(usageEventResult.event)
-      } catch {
-        // Telemetry failures must not change provider call behavior.
-      }
+      await params.telemetryDispatcher.dispatch(usageEventResult.event)
     }
   }
 
   async function dispatchFailure(error: unknown) {
     if (telemetrySettled) {
+      return
+    }
+
+    // Closing or failing the iterator cannot undo a completed provider response.
+    if (completionObserved) {
+      await dispatchResult()
       return
     }
 
@@ -235,82 +252,123 @@ export function wrapOpenAIStreamResult<TResult extends object>(
     warnTelemetryIssues(usageEventResult.warnings)
 
     if (usageEventResult.event) {
-      try {
-        await params.telemetryDispatcher.dispatch(usageEventResult.event)
-      } catch {
-        // Telemetry failures must not change provider call behavior.
-      }
+      await params.telemetryDispatcher.dispatch(usageEventResult.event)
     }
   }
 
   function observeItem(item: unknown) {
     if (params.apiFamily === "OPENAI_RESPONSES") {
-      if (isTerminalResponsesCompletedEvent(item)) {
+      if (isTerminalResponsesEvent(item)) {
         finalResponsesResponse = item.response as Record<string, unknown>
+        completionObserved = true
+        terminalStatus = item.type === "response.completed" ? "SUCCEEDED" : "FAILED"
+        const error = finalResponsesResponse.error
+        const incomplete = finalResponsesResponse.incomplete_details
+        terminalErrorCode = isRecord(error) ? getString(error.code) : undefined
+        if (item.type === "response.incomplete") {
+          terminalErrorCode = (isRecord(incomplete) ? getString(incomplete.reason) : undefined) ?? "RESPONSE_INCOMPLETE"
+        }
       }
       return
     }
 
     observeChatCompletionChunk(item, chatCompletionState)
+    if (isRecord(item) && Array.isArray(item.choices)) {
+      for (const choice of item.choices) {
+        if (isRecord(choice) && getString(choice.finish_reason)) {
+          const index = typeof choice.index === "number" ? choice.index : 0
+          if (Number.isInteger(index) && index >= 0 && index < expectedChoices) finishedChoices.add(index)
+        }
+      }
+    }
+    // A choice finishing is not the end of the stream: other choices and usage
+    // may follow. The usage-only chunk confirms completion for the whole call.
+    if (isRecord(item) && isRecord(item.usage) &&
+      Array.isArray(item.choices) && item.choices.length === 0) {
+      completionObserved = true
+    }
+  }
+
+  // Native OpenAI streams use this factory for iteration, tee(), and readable
+  // streams. Keep their original receiver so private fields remain accessible.
+  const nativeIterator = Reflect.get(result, "iterator")
+  const streamController = Reflect.get(result, "controller")
+  const controller = streamController instanceof AbortController ? streamController : undefined
+  const hasNativeFactory = typeof nativeIterator === "function" && controller !== undefined
+  const createIterator = hasNativeFactory
+    ? () => nativeIterator.call(result) as AsyncIterator<unknown>
+    : () => result[Symbol.asyncIterator]()
+
+  function wrappedAsyncIterator() {
+    const originalIterator = createIterator()
+
+    return {
+      async next(...args: [] | [unknown]) {
+        try {
+          const iteration = await originalIterator.next(...args)
+
+          if (iteration.done) {
+            if (!completionObserved && controller?.signal.aborted) {
+              await dispatchFailure(createCanceledStreamError())
+              return iteration
+            }
+            if (!completionObserved && (params.apiFamily === "OPENAI_RESPONSES" || finishedChoices.size !== expectedChoices)) {
+              const error = Object.assign(new Error("OpenAI stream ended before generation finished."), { code: "STREAM_INCOMPLETE" })
+              await dispatchFailure(error)
+              return iteration
+            }
+            await dispatchResult()
+            return iteration
+          }
+
+          observeItem(iteration.value)
+          return iteration
+        } catch (error) {
+          await dispatchFailure(error)
+          throw error
+        }
+      },
+      async return(value?: unknown) {
+        try {
+          const iteration = typeof originalIterator.return === "function"
+            ? await originalIterator.return(value)
+            : { done: true, value }
+
+          await dispatchFailure(createCanceledStreamError())
+          return iteration
+        } catch (error) {
+          await dispatchFailure(error)
+          throw error
+        }
+      },
+      async throw(error?: unknown) {
+        try {
+          if (typeof originalIterator.throw === "function") {
+            return await originalIterator.throw(error)
+          }
+
+          throw error
+        } catch (caughtError) {
+          await dispatchFailure(caughtError)
+          throw caughtError
+        }
+      },
+      [Symbol.asyncIterator]() {
+        return this
+      },
+    }
+  }
+
+  if (hasNativeFactory) {
+    Reflect.set(result, "iterator", wrappedAsyncIterator)
+    return result
   }
 
   return new Proxy(result, {
     get(target, property, receiver) {
-      if (property !== Symbol.asyncIterator) {
-        return Reflect.get(target, property, receiver)
-      }
-
-      return function wrappedAsyncIterator() {
-        const originalIterable = target as TResult & AsyncIterable<unknown>
-        const originalIterator = originalIterable[Symbol.asyncIterator]()
-
-        return {
-          async next(...args: [] | [unknown]) {
-            try {
-              const iteration = await originalIterator.next(...args)
-
-              if (iteration.done) {
-                await dispatchSuccess()
-                return iteration
-              }
-
-              observeItem(iteration.value)
-              return iteration
-            } catch (error) {
-              await dispatchFailure(error)
-              throw error
-            }
-          },
-          async return(value?: unknown) {
-            try {
-              const iteration = typeof originalIterator.return === "function"
-                ? await originalIterator.return(value)
-                : { done: true, value }
-
-              await dispatchFailure(createCanceledStreamError())
-              return iteration
-            } catch (error) {
-              await dispatchFailure(error)
-              throw error
-            }
-          },
-          async throw(error?: unknown) {
-            try {
-              if (typeof originalIterator.throw === "function") {
-                return await originalIterator.throw(error)
-              }
-
-              throw error
-            } catch (caughtError) {
-              await dispatchFailure(caughtError)
-              throw caughtError
-            }
-          },
-          [Symbol.asyncIterator]() {
-            return this
-          },
-        }
-      }
+      return property === Symbol.asyncIterator
+        ? wrappedAsyncIterator
+        : Reflect.get(target, property, receiver)
     },
   })
 }
