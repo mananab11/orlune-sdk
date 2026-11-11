@@ -6,10 +6,11 @@ TypeScript SDK for sending AI usage events to the Orlune ingestion API.
 
 Current v1 support:
 
-- wraps an existing OpenAI client
+- wraps an existing OpenAI or Anthropic client
 - supports `responses.create(...)`
 - supports `chat.completions.create(...)`
 - supports streamed and non-streamed calls for both APIs
+- supports Anthropic `messages.create(...)`, streaming `create(...)`, and `messages.stream(...)`
 - sends usage telemetry to Orlune
 - keeps provider call behavior unchanged unless guardrails are explicitly enabled
 - supports explicit evaluation and automatic preflight guardrail checks
@@ -18,7 +19,7 @@ Current v1 support:
 
 ## Install
 
-This package is currently local to the repository. It is intended to be safe to publish and use for OpenAI text telemetry.
+This package is currently local to the repository. It supports OpenAI and Anthropic text telemetry.
 
 ## Create Client
 
@@ -237,9 +238,10 @@ const openai = orlune.wrap(rawOpenAI, {
 
 Only the client initialization changes. Your existing provider calls stay the same.
 
-Automatic detection currently supports OpenAI API endpoints (`api.openai.com`
-and its subdomains). Clients targeting custom proxies, Azure, or other providers
-are rejected rather than silently attributing their usage to OpenAI. Compatible
+Automatic detection supports OpenAI API endpoints (`api.openai.com`
+and its subdomains) and Anthropic (`api.anthropic.com`). Clients targeting custom
+proxies, Azure, Bedrock, Vertex, or other providers are rejected rather than
+silently attributing their usage to a different provider. Compatible
 method names alone are not enough to identify a provider.
 
 ## Track A Single Invocation
@@ -284,7 +286,7 @@ stream to collect its final usage. A stream remains single-consumption even if
 you access the same call through more than one promise helper.
 
 Metadata-aware method types and promise observation are reusable across provider
-adapters. Runtime provider support remains OpenAI only; adding a provider still
+adapters. Runtime provider support includes OpenAI and Anthropic; adding a provider still
 requires its detection, method interception, and usage mapping adapter.
 
 Provider adapters own their client matching, intercepted method paths, promise
@@ -293,6 +295,43 @@ metadata extraction and the single-invocation observation lifecycle without
 assuming OpenAI response fields or helper names. Register new adapters in
 `src/providers/get-provider-adapter.ts` and their public client types in
 `src/providers/provider-client-types.ts`.
+
+## Anthropic Messages
+
+```ts
+import Anthropic from "@anthropic-ai/sdk"
+
+const anthropic = orlune.wrap(new Anthropic(), {
+  defaults: { feature: "Support replies" },
+  guardrails: { enabled: true },
+})
+
+const message = await anthropic.messages.create({
+  model: "claude-haiku-4-5",
+  max_tokens: 1024,
+  messages: [{ role: "user", content: "Help me track my order." }],
+  orlune_metadata: { customerId: "customer_123", eventType: "REPLY" },
+})
+```
+
+Set `stream: true` on `create()` to receive the native async event stream, or use
+`messages.stream()` for `.on("text", ...)`, `.finalMessage()`, `.finalText()`, and
+`.abort()`. The helper remains synchronous; its internal `create()` call performs
+preflight and telemetry once. Guardrail errors remain Orlune exceptions through
+the helper's promise methods, error listeners, async iteration, and readable stream.
+
+Native usage fields are captured without retaining message content. Cache reads,
+five-minute cache writes, and one-hour cache writes are priced separately on the
+backend and roll up into input cost. Reported thinking tokens are a subset of
+output, not an additional charge. Incomplete streams have unavailable usage rather
+than guessed totals. Unknown models and unsupported pricing modes have unavailable
+cost, while their reported token usage is retained.
+
+The raw `.asResponse()` ownership rule above also applies to Anthropic. Batch APIs,
+beta namespaces, tool runners, and cloud-provider clients are not instrumented.
+Supplying tools to a normal Messages call is supported; Orlune does not run them.
+Anthropic is a development-only dependency here, used for compatibility tests;
+applications supply their own Anthropic client.
 
 ## Streaming
 
@@ -451,11 +490,11 @@ The SDK derives runtime fields:
 
 ## Current Limits
 
-- provider support today is OpenAI only
+- provider support is direct OpenAI and Anthropic APIs
 - transport target is selected by the configured production, development, or sandbox environment
 - telemetry failures do not change provider call behavior
-- the SDK is currently intended for OpenAI text telemetry only
-- if a streamed request ends without final usage from the provider, the backend may ingest the request with zero cost data
+- the SDK is currently intended for text-token telemetry
+- if a streamed request ends without final usage, the backend retains the request with unavailable usage/cost rather than treating it as free
 
 ## Shutdown Guidance
 

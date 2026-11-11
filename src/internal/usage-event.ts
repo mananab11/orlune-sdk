@@ -57,12 +57,7 @@ type OpenAIUsageEvent = {
   }
 }
 
-type AnthropicProviderUsage = {
-  inputTokens: number
-  outputTokens: number
-  cacheCreationInputTokens?: number
-  cacheReadInputTokens?: number
-}
+type AnthropicProviderUsage = Record<string, unknown>
 
 type AnthropicUsageEvent = {
   provider: "ANTHROPIC"
@@ -82,7 +77,9 @@ type AnthropicUsageEvent = {
     anthropic: {
       usage: AnthropicProviderUsage
       stopReason?: string
-      serverToolUse?: Record<string, number>
+      requestedServiceTier?: string
+      requestedInferenceGeo?: string
+      requestedSpeed?: string
     }
   }
 }

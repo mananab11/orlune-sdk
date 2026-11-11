@@ -1,21 +1,21 @@
-import { observeProviderCall } from "../observe-provider-call.js"
+import { observeProviderCall } from "./observe-provider-call.js"
 
-type OpenAIEnvelope = { data: unknown; [key: string]: unknown }
-type OpenAIPromiseLike = PromiseLike<unknown> & {
+type ApiEnvelope = { data: unknown; [key: string]: unknown }
+type ApiPromiseLike = PromiseLike<unknown> & {
   asResponse?: () => Promise<unknown>
-  withResponse?: () => Promise<OpenAIEnvelope>
+  withResponse?: () => Promise<ApiEnvelope>
 }
 
 /** Defer parsing, not invocation, so raw-response consumers retain body ownership. */
-export function observeOpenAICall(params: {
+export function observeApiCall(params: {
   start: () => Promise<{ value: unknown }>
   onResult: (result: unknown) => Promise<unknown>
   onError: (error: unknown) => Promise<void>
 }) {
-  const call = observeProviderCall<OpenAIEnvelope>({
+  const call = observeProviderCall<ApiEnvelope>({
     start: params.start,
     readResult: async value => {
-      const provider = value as OpenAIPromiseLike | null | undefined
+      const provider = value as ApiPromiseLike | null | undefined
       return typeof provider?.withResponse === "function"
         ? provider.withResponse() : { data: await value }
     },
@@ -24,14 +24,14 @@ export function observeOpenAICall(params: {
   })
 
   const asResponse = () => call.read(async value => {
-    const provider = value as OpenAIPromiseLike | null | undefined
+    const provider = value as ApiPromiseLike | null | undefined
     if (typeof provider?.asResponse !== "function") {
-      throw new TypeError("This OpenAI call does not support asResponse().")
+      throw new TypeError("This provider call does not support asResponse().")
     }
     return provider.asResponse()
   })
 
-  function view(envelope: () => Promise<OpenAIEnvelope>): OpenAICallView {
+  function view(envelope: () => Promise<ApiEnvelope>): ApiCallView {
     const data = () => envelope().then(result => result.data)
     return {
       then: (onfulfilled, onrejected) => data().then(onfulfilled, onrejected),
@@ -43,7 +43,7 @@ export function observeOpenAICall(params: {
       // OpenAI's parse() helpers project the data through this hook. Reuse the
       // observed result rather than parsing the HTTP body or sending telemetry twice.
       _thenUnwrap(transform: (data: unknown) => unknown) {
-        let projected: Promise<OpenAIEnvelope> | undefined
+        let projected: Promise<ApiEnvelope> | undefined
         return view(() => projected ??= envelope().then(result => ({ ...result, data: transform(result.data) })))
       },
     }
@@ -52,8 +52,8 @@ export function observeOpenAICall(params: {
   return view(call.result)
 }
 
-type OpenAICallView = Promise<unknown> & {
-  withResponse(): Promise<OpenAIEnvelope>
+type ApiCallView = Promise<unknown> & {
+  withResponse(): Promise<ApiEnvelope>
   asResponse(): Promise<unknown>
-  _thenUnwrap(transform: (data: unknown) => unknown): OpenAICallView
+  _thenUnwrap(transform: (data: unknown) => unknown): ApiCallView
 }

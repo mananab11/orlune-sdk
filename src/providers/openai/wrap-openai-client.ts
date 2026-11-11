@@ -18,7 +18,7 @@ import type { WrapProviderClientOptions } from "../provider-adapter.js"
 import { checkGuardrails } from "../../internal/check-guardrails.js"
 import { OrluneEvaluationException } from "../../guardrails.js"
 import { extractOpenAIPrompt } from "./extract-prompt.js"
-import { observeOpenAICall } from "./observe-openai-call.js"
+import { observeApiCall } from "../observe-api-call.js"
 import type { WrappedOpenAIClient } from "./openai-client-types.js"
 
 function warnTelemetryIssues(warnings: string[]) {
@@ -141,7 +141,7 @@ function wrapCreateMethod(
       }
     }
 
-    return observeOpenAICall({
+    return observeApiCall({
       start: async () => {
         // Preflight is outside provider error handling: a denied call has no provider event.
         if (options.orluneOptions?.guardrails?.enabled) {
