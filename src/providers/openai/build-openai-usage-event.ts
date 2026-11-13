@@ -209,12 +209,6 @@ function buildOperation(
     operation.type = operationType
   }
 
-  const operationName = getString(metadata?.activity?.name)
-
-  if (operationName) {
-    operation.name = operationName
-  }
-
   return operation
 }
 

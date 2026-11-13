@@ -27,8 +27,8 @@ export function createEvaluator(apiKey: string, endpoint: string, defaultTimeout
     if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 2147483647) {
       throw new OrluneEvaluationException("Evaluation timeoutMs must be a positive duration.", "INVALID_REQUEST")
     }
-    for (const [field, value] of Object.entries({ customerId: request?.customerId, feature: request?.feature, activityId: request?.activityId, activityType: request?.activityType, activityName: request?.activityName })) {
-      if (field !== "customerId" && field !== "activityId" && value === undefined) continue
+    for (const [field, value] of Object.entries({ customerId: request?.customerId, feature: request?.feature, activityId: request?.activityId, activityType: request?.activityType })) {
+      if (field === "feature" && value === undefined) continue
       const maxLength = field === "activityType" ? 128 : 256
       if (typeof value !== "string" || !value.trim() || value.length > maxLength) {
         throw new OrluneEvaluationException(`${field} must be a non-empty string of at most ${maxLength} characters.`, "INVALID_REQUEST")
@@ -56,7 +56,7 @@ export function createEvaluator(apiKey: string, endpoint: string, defaultTimeout
     try {
       const response = await fetch(endpoint, {
         method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify({ customerId: request.customerId, feature: request.feature, activityId: request.activityId, activityType: request.activityType, activityName: request.activityName, prompt }),
+        body: JSON.stringify({ customerId: request.customerId, feature: request.feature, activityId: request.activityId, activityType: request.activityType, prompt }),
         signal: controller.signal,
       })
       if (!response.ok) {

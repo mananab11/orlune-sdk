@@ -99,7 +99,7 @@ const input = {
   orlune_metadata: {
     customerId: "customer-123",
     eventType: "MODEL_CALL",
-    activity: { id: "activity-123" },
+    activity: { id: "activity-123", type: "generate_summary" },
   },
 }
 
@@ -119,9 +119,9 @@ try {
 ```
 
 The SDK merges defaults and call metadata, checks guardrails, and only then calls
-the provider. `customerId` is required for guarded calls. `feature` and activity
-ID are optional; wrapped calls generate an activity ID when absent and reuse it
-for evaluation and telemetry. Provider timing excludes preflight latency.
+the provider. `customerId` is required for guarded calls. Every wrapped call
+requires `activity.id` and `activity.type`; feature is optional. The supplied
+activity is used for evaluation and telemetry. Provider timing excludes preflight latency.
 
 With guardrails enabled, the SDK also sends the latest user message's text to
 Orlune for configured prompt injection and allowed-intent policies. Responses
@@ -172,8 +172,7 @@ const result = await orlune.evaluate({
   customerId: "customer-123",
   feature: "summaries",
   activityId: "activity-123",
-  activityType: "generate_summary", // Optional; defaults to feature in the backend.
-  activityName: "Weekly summary", // Optional display name.
+  activityType: "generate_summary", // Required.
   prompt: "Summarize this report", // Optional; omit for usage-only evaluation.
 }, { timeoutMs: 5000, signal: abortController.signal })
 
@@ -187,11 +186,10 @@ if (result.decision === "BLOCK") {
 
 Direct evaluation returns `ALLOW`, `BLOCK`, or `NOT_EVALUATED` rather than throwing
 for these outcomes.
-Both `customerId` and `activityId` are required for direct checks. Reuse that
+The fields `customerId`, `activityId`, and `activityType` are required for direct checks. Reuse that
 activity ID in subsequent calls to group their decisions and usage together.
-Wrapped calls forward their resolved activity ID, type, and optional name
-automatically, generating an activity ID when none is supplied. Activity type
-and name remain optional.
+Wrapped calls forward the activity ID and type supplied in per-call metadata.
+Neither field is generated, inherited from defaults, or inferred from feature.
 An `ALLOW` can include `matchedRule` when a policy detected a violation without
 blocking. It identifies the last triggered policy; a `BLOCK` identifies the first
 blocking policy. Always use `decision`, not the presence of `matchedRule`, to
@@ -228,15 +226,11 @@ const rawOpenAI = new OpenAI({
 const openai = orlune.wrap(rawOpenAI, {
   defaults: {
     feature: "Suggestions generation",
-    activity: {
-      type: "draft_message",
-      name: "Draft message",
-    },
   },
 })
 ```
 
-Only the client initialization changes. Your existing provider calls stay the same.
+Provider parameters stay the same; add the required activity metadata to each call.
 
 Automatic detection supports OpenAI API endpoints (`api.openai.com`
 and its subdomains) and Anthropic (`api.anthropic.com`). Clients targeting custom
@@ -255,6 +249,7 @@ await openai.responses.create({
   orlune_metadata: {
     customerId: "customer_123",
     eventType: "MODEL_CALL",
+    activity: { id: crypto.randomUUID(), type: "draft_message" },
   },
 })
 ```
@@ -275,7 +270,7 @@ provider call, including when using `.asResponse()`.
 const { data, response, request_id } = await openai.responses.create({
   model: "gpt-4.1-mini",
   input: "Hello",
-  orlune_metadata: { customerId: "customer_123", eventType: "MODEL_CALL" },
+  orlune_metadata: { customerId: "customer_123", eventType: "MODEL_CALL", activity: { id: crypto.randomUUID(), type: "draft_message" } },
 }).withResponse()
 ```
 
@@ -310,7 +305,7 @@ const message = await anthropic.messages.create({
   model: "claude-haiku-4-5",
   max_tokens: 1024,
   messages: [{ role: "user", content: "Help me track my order." }],
-  orlune_metadata: { customerId: "customer_123", eventType: "REPLY" },
+  orlune_metadata: { customerId: "customer_123", eventType: "REPLY", activity: { id: crypto.randomUUID(), type: "support_conversation" } },
 })
 ```
 
@@ -347,6 +342,7 @@ const stream = await openai.responses.create({
   orlune_metadata: {
     customerId: "customer_123",
     eventType: "MODEL_STREAM",
+    activity: { id: crypto.randomUUID(), type: "draft_message" },
   },
 })
 
@@ -365,6 +361,7 @@ const stream = await openai.chat.completions.create({
   orlune_metadata: {
     customerId: "customer_123",
     eventType: "CHAT_STREAM",
+    activity: { id: crypto.randomUUID(), type: "support_conversation" },
   },
 })
 
@@ -396,7 +393,6 @@ await openai.responses.create({
     activity: {
       id: activityId,
       type: "respond_to_ticket",
-      name: "Respond to ticket",
     },
   },
 })
@@ -410,7 +406,6 @@ await openai.responses.create({
     activity: {
       id: activityId,
       type: "respond_to_ticket",
-      name: "Respond to ticket",
     },
   },
 })
@@ -420,17 +415,13 @@ Both requests will be tied together in the backend under the same internal opera
 
 ## Standalone Activity Behavior
 
-If you do not provide an `activity.id`, the SDK generates one automatically.
-
-That means:
-
-- every invocation is still tracked
-- each invocation becomes its own standalone activity
-- you only need to provide an `activity.id` when you want stitching
+For a standalone call, supply `activity: { id: crypto.randomUUID(), type: "draft_message" }`.
+For a multi-call workflow, create the ID once and reuse it across those calls.
+The SDK never generates activity IDs.
 
 ## Metadata Rules
 
-Wrapper-level `defaults` acts as stable defaults.
+Wrapper-level `defaults` supports only `feature`. Activity is always per call.
 
 Per-call `orlune_metadata` supplies invocation-level metadata and overrides wrapper defaults where applicable.
 
@@ -450,6 +441,7 @@ await openai.responses.create({
     customerId: "customer_456",
     eventType: "MODEL_CALL",
     feature: "Summaries",
+    activity: { id: crypto.randomUUID(), type: "research" },
   },
 })
 ```
@@ -467,9 +459,13 @@ The caller provides business context:
 - `customerId`
 - `eventType`
 - `feature` or wrapper default feature
-- optional `activity.id`
-- optional `activity.type`
-- optional `activity.name`
+- required `activity.id` (1-256 characters, not blank)
+- required `activity.type` (1-128 characters, not blank)
+
+Every wrapped call requires `orlune_metadata.activity` with both `id` and `type`.
+TypeScript enforces this contract. Runtime validation rejects missing or invalid
+values before the provider is called, including when guardrails are disabled.
+Activity is not supported in wrapper defaults.
 
 `customerId` and `eventType` are required per invocation.
 

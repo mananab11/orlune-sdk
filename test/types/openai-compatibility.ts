@@ -4,7 +4,7 @@ import type { WithMetadataAtPath } from "../../dist/providers/wrapped-client-typ
 
 const sdk = OrluneClient({ apiKey: "test", environment: "sandbox" })
 const client = sdk.wrap(new OpenAI({ apiKey: "test" }))
-const metadata = { customerId: "customer", eventType: "MODEL_CALL" }
+const metadata = { customerId: "customer", eventType: "MODEL_CALL", activity: { id: "conversation", type: "support" } }
 const response = await client.responses.create({ model: "gpt-4.1", input: "Hi", orlune_metadata: metadata })
 response.output_text satisfies string
 const stream = await client.responses.create({ model: "gpt-4.1", input: "Hi", stream: true, orlune_metadata: metadata })
@@ -22,6 +22,12 @@ const dynamic = await client.responses.create({ model: "gpt-4.1", stream: stream
 if ("output_text" in dynamic) dynamic.output_text satisfies string
 // @ts-expect-error wrong provider parameter must still be rejected
 client.responses.create({ model: 42, orlune_metadata: metadata })
+// @ts-expect-error metadata is required for wrapped calls
+client.responses.create({ model: "gpt-4.1", input: "Hi" })
+// @ts-expect-error activity is required
+client.responses.create({ model: "gpt-4.1", orlune_metadata: { customerId: "customer" } })
+// @ts-expect-error activity ID is required
+client.responses.create({ model: "gpt-4.1", orlune_metadata: { activity: { type: "support" } } })
 // @ts-expect-error wrong metadata type must still be rejected
 client.responses.create({ model: "gpt-4.1", orlune_metadata: { customerId: 123 } })
 // @ts-expect-error non-streaming response is not a stream

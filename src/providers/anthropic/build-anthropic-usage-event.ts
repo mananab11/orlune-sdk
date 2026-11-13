@@ -54,7 +54,6 @@ export function buildAnthropicUsageEvent(
     ...(metadata.activity?.id ? { operation: {
       id: metadata.activity.id,
       ...(metadata.activity.type ? { type: metadata.activity.type } : {}),
-      ...(metadata.activity.name ? { name: metadata.activity.name } : {}),
       startedAt, completedAt,
       status: status === "SUCCEEDED" ? "SUCCEEDED" : status === "CANCELED" ? "CANCELED" : "FAILED",
     } } : {}),

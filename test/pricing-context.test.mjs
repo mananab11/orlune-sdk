@@ -29,7 +29,7 @@ for (const api of ["responses", "chat"]) {
           .wrap(api === "responses" ? { baseURL: "https://api.openai.com/v1", responses: { create } } : { baseURL: "https://api.openai.com/v1", chat: { completions: { create } } })
         const method = api === "responses" ? client.responses.create : client.chat.completions.create
         const result = await method({ model: "gpt-4.1", service_tier: "flex", tools: [{ type: "web_search" }], stream,
-          orlune_metadata: { customerId: "customer", feature: "test", eventType: "MODEL_CALL" } })
+          orlune_metadata: { customerId: "customer", feature: "test", eventType: "MODEL_CALL", activity: { id: "activity", type: "test" } } })
         if (stream) for await (const _chunk of result) { /* consume to completion */ }
         assert.equal(events.length, 1)
         assert.equal(events[0].providerEvent.openai.serviceTier, "priority")

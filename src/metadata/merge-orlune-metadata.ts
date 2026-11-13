@@ -6,24 +6,22 @@ function isDefined<TValue>(value: TValue | undefined): value is TValue {
 
 /**
  * Merges wrapper-level defaults with per-call metadata.
- * Per-call values override wrapper defaults, while activity fields merge shallowly.
+ * Only feature has a wrapper default. Activity always comes from the call.
  */
 export function mergeOrluneMetadata(
   wrapperDefaults?: OrluneWrapDefaults,
   callMetadata?: OrluneCallMetadata,
-): OrluneCallMetadata | undefined {
+): Partial<OrluneCallMetadata> | undefined {
   if (!wrapperDefaults && !callMetadata) {
     return undefined
   }
 
-  const activityId = callMetadata?.activity?.id ?? wrapperDefaults?.activity?.id
-  const activityType = callMetadata?.activity?.type ?? wrapperDefaults?.activity?.type
-  const activityName = callMetadata?.activity?.name ?? wrapperDefaults?.activity?.name
+  const activity = callMetadata?.activity
   const customerId = callMetadata?.customerId
   const feature = callMetadata?.feature ?? wrapperDefaults?.feature
   const eventType = callMetadata?.eventType
 
-  const merged: OrluneCallMetadata = {}
+  const merged: Partial<OrluneCallMetadata> = {}
 
   if (isDefined(customerId)) {
     merged.customerId = customerId
@@ -37,20 +35,8 @@ export function mergeOrluneMetadata(
     merged.eventType = eventType
   }
 
-  if (isDefined(activityId) || isDefined(activityType) || isDefined(activityName)) {
-    merged.activity = {}
-
-    if (isDefined(activityId)) {
-      merged.activity.id = activityId
-    }
-
-    if (isDefined(activityType)) {
-      merged.activity.type = activityType
-    }
-
-    if (isDefined(activityName)) {
-      merged.activity.name = activityName
-    }
+  if (isDefined(activity)) {
+    merged.activity = { ...activity }
   }
 
   return Object.keys(merged).length > 0 ? merged : undefined

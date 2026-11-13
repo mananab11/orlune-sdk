@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import OpenAI from "openai"
 import { OrluneClient, OrluneGuardrailException } from "../dist/index.js"
 
-const metadata = { customerId: "customer", feature: "test", eventType: "MODEL_CALL" }
+const metadata = { customerId: "customer", feature: "test", eventType: "MODEL_CALL", activity: { id: "activity", type: "test" } }
 
 function setup(t, { api, stream = false, block = false, fail = false } = {}) {
   let calls = 0

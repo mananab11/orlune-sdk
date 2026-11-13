@@ -25,7 +25,6 @@ type SdkIdentity = {
 type UsageEventOperation = {
   id: string
   type?: string
-  name?: string
   status?: OperationStatus
   startedAt?: string
   completedAt?: string

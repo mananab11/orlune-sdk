@@ -21,9 +21,6 @@ function assertNonEmptyString(value: string, fieldName: string) {
 function wrapSettings(options?: WrapClientOptions) {
   return JSON.stringify([
     options?.defaults?.feature,
-    options?.defaults?.activity?.id,
-    options?.defaults?.activity?.type,
-    options?.defaults?.activity?.name,
     options?.guardrails?.enabled ?? false,
     options?.guardrails?.onError ?? "throw",
     options?.guardrails?.timeoutMs,

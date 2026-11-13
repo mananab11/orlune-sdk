@@ -11,21 +11,19 @@ export type CreateClientOptions = {
 }
 
 export type OrluneActivityMetadata = {
-  id?: string
-  type?: string
-  name?: string
+  id: string
+  type: string
 }
 
 export type OrluneWrapDefaults = {
   feature?: string
-  activity?: OrluneActivityMetadata
 }
 
 export type OrluneCallMetadata = {
   customerId?: string
   feature?: string
   eventType?: string
-  activity?: OrluneActivityMetadata
+  activity: OrluneActivityMetadata
 }
 
 export type UsageApiFamily =
@@ -61,7 +59,7 @@ export type WrapClientOptions = {
 }
 
 export type WrappedClientRequestMetadata = {
-  orlune_metadata?: OrluneCallMetadata
+  orlune_metadata: OrluneCallMetadata
 }
 
 export type OrluneClient = {

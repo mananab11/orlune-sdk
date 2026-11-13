@@ -1,4 +1,4 @@
-export type EvaluationRequest = { customerId: string; feature?: string; activityId: string; activityType?: string; activityName?: string; prompt?: string }
+export type EvaluationRequest = { customerId: string; feature?: string; activityId: string; activityType: string; prompt?: string }
 export type EvaluationOptions = { timeoutMs?: number; signal?: AbortSignal }
 export type GuardrailOptions = { enabled: boolean; onError?: "throw" | "allow"; timeoutMs?: number }
 type EvaluationBase = {

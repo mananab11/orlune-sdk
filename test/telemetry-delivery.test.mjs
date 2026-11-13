@@ -59,7 +59,7 @@ test("background telemetry snapshots usage without changing the provider respons
   const result = await openai.responses.create({
     model: "gpt-4.1-mini",
     input: "Hello",
-    orlune_metadata: { customerId: "customer", eventType: "MODEL_CALL" },
+    orlune_metadata: { customerId: "customer", eventType: "MODEL_CALL", activity: { id: "activity", type: "test" } },
   })
   assert.equal(result, response)
   assert.equal(result.usage, usage)
@@ -108,6 +108,7 @@ test("background_flush can be explicitly drained with orlune.flush before the ti
       model: "gpt-4.1-mini",
       input: "Hello",
       orlune_metadata: {
+        activity: { id: "activity", type: "test" },
         customerId: "customer_explicit_flush_before_timer",
         eventType: "MODEL_CALL",
       },
@@ -156,6 +157,7 @@ test("background_flush delivers queued telemetry without explicit flush", async 
       model: "gpt-4.1-mini",
       input: "Hello",
       orlune_metadata: {
+        activity: { id: "activity", type: "test" },
         customerId: "customer_background_flush",
         eventType: "MODEL_CALL",
       },
@@ -204,6 +206,7 @@ test("background_flush flushes pending telemetry when orlune.flush is called", a
       model: "gpt-4.1-mini",
       input: "Hello",
       orlune_metadata: {
+        activity: { id: "activity", type: "test" },
         customerId: "customer_background_explicit_flush",
         eventType: "MODEL_CALL",
       },

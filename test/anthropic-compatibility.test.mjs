@@ -5,7 +5,7 @@ import { OrluneClient, OrluneGuardrailException, OrluneEvaluationException } fro
 import { extractAnthropicPrompt } from "../dist/providers/anthropic/extract-prompt.js"
 import { preserveGuardrailErrors } from "../dist/providers/anthropic/preserve-guardrail-errors.js"
 
-const metadata = { customerId: "customer", feature: "support", eventType: "REPLY" }
+const metadata = { customerId: "customer", feature: "support", eventType: "REPLY", activity: { id: "activity", type: "support" } }
 const usage = { input_tokens: 100, output_tokens: 30, cache_read_input_tokens: 200,
   cache_creation_input_tokens: 300, cache_creation: { ephemeral_5m_input_tokens: 200, ephemeral_1h_input_tokens: 100 },
   output_tokens_details: { thinking_tokens: 10 }, service_tier: "standard" }

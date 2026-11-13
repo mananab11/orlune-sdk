@@ -9,8 +9,7 @@ export async function checkGuardrails(evaluate: OrluneClient["evaluate"], settin
       customerId: metadata.customerId ?? "",
       activityId: metadata.activity.id,
       ...(metadata.feature !== undefined ? { feature: metadata.feature } : {}),
-      ...(metadata.activity.type !== undefined ? { activityType: metadata.activity.type } : {}),
-      ...(metadata.activity.name !== undefined ? { activityName: metadata.activity.name } : {}),
+      activityType: metadata.activity.type,
       ...(prompt !== undefined ? { prompt } : {}),
     }, {
       ...(settings.timeoutMs !== undefined ? { timeoutMs: settings.timeoutMs } : {}),

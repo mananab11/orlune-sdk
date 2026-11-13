@@ -60,6 +60,7 @@ test("wrapped OpenAI responses.create strips orlune_metadata and sends telemetry
       model: "gpt-4.1-mini",
       input: "Hello",
       orlune_metadata: {
+        activity: { id: "activity", type: "test" },
         customerId: "customer_123",
         eventType: "MODEL_CALL",
       },
@@ -90,7 +91,7 @@ test("wrapped OpenAI responses.create strips orlune_metadata and sends telemetry
       total_tokens: 165,
     })
     assert.equal(typeof payload.event.operation.id, "string")
-    assert.equal(payload.event.operation.type, "Suggestions generation")
+    assert.equal(payload.event.operation.type, "test")
     assert.equal(payload.event.operation.status, "SUCCEEDED")
   } finally {
     globalThis.fetch = originalFetch
@@ -158,6 +159,7 @@ test("wrapping the same OpenAI client twice is idempotent", async () => {
       model: "gpt-4.1-mini",
       input: "Hello",
       orlune_metadata: {
+        activity: { id: "activity", type: "test" },
         customerId: "customer_idempotent_123",
         eventType: "MODEL_CALL",
       },
@@ -224,7 +226,6 @@ test("wrapped OpenAI responses.create rethrows provider error after sending fail
             activity: {
               id: "activity_fixed_123",
               type: "answer_research_query",
-              name: "Answer research query",
             },
           },
         }),
@@ -240,7 +241,7 @@ test("wrapped OpenAI responses.create rethrows provider error after sending fail
     assert.equal(payload.event.requestId, "req_provider_failed_123")
     assert.equal(payload.event.operation.id, "activity_fixed_123")
     assert.equal(payload.event.operation.type, "answer_research_query")
-    assert.equal(payload.event.operation.name, "Answer research query")
+    assert.equal(payload.event.operation.name, undefined)
     assert.equal(payload.event.operation.status, "FAILED")
   } finally {
     globalThis.fetch = originalFetch
@@ -310,6 +311,7 @@ test("wrapped OpenAI responses.create skips telemetry and warns when eventType i
       model: "gpt-4.1-mini",
       input: "Hello",
       orlune_metadata: {
+        activity: { id: "activity", type: "test" },
         customerId: "customer_123",
       },
     })
@@ -401,6 +403,7 @@ test("wrapped OpenAI chat.completions.create sends one terminal telemetry event 
       messages: [{ role: "user", content: "Hello" }],
       stream: true,
       orlune_metadata: {
+        activity: { id: "activity", type: "test" },
         customerId: "customer_stream_123",
         eventType: "CHAT_STREAM",
       },
@@ -502,6 +505,7 @@ test("wrapped OpenAI responses.create sends one terminal telemetry event for str
       input: "Hello",
       stream: true,
       orlune_metadata: {
+        activity: { id: "activity", type: "test" },
         customerId: "customer_response_stream_123",
         eventType: "RESPONSE_STREAM",
       },
@@ -600,6 +604,7 @@ test("wrapped OpenAI streamed call sends canceled terminal telemetry when consum
       messages: [{ role: "user", content: "Hello" }],
       stream: true,
       orlune_metadata: {
+        activity: { id: "activity", type: "test" },
         customerId: "customer_stream_cancel_123",
         eventType: "CHAT_STREAM",
       },

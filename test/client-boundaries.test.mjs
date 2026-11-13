@@ -24,14 +24,13 @@ test("repeated wraps preserve ownership and reject configuration changes at setu
 test("wrap settings are snapshotted rather than following caller mutations", async t => {
   const events = []
   t.mock.method(globalThis, "fetch", async (_url, init) => { events.push(JSON.parse(init.body).event); return Response.json({}) })
-  const settings = { defaults: { feature: "original", activity: { type: "original" } }, guardrails: { enabled: false } }
+  const settings = { defaults: { feature: "original" }, guardrails: { enabled: false } }
   const client = sdk().wrap({ baseURL: "https://api.openai.com/v1", responses: { async create() {
     return { id: "test", model: "gpt-4.1", usage: {} }
   } } }, settings)
   settings.defaults.feature = "changed"
-  settings.defaults.activity.type = "changed"
   settings.guardrails.enabled = true
-  await client.responses.create({ orlune_metadata: { customerId: "test", eventType: "MODEL_CALL" } })
+  await client.responses.create({ orlune_metadata: { customerId: "test", eventType: "MODEL_CALL", activity: { id: "activity", type: "original" } } })
   assert.equal(events.length, 1)
   assert.equal(events[0].feature, "original")
   assert.equal(events[0].operation.type, "original")

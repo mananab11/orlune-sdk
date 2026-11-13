@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import { OrluneClient } from "../dist/index.js"
 import OpenAI from "openai"
 
-const metadata = { customerId: "customer", feature: "test", eventType: "MODEL_CALL" }
+const metadata = { customerId: "customer", feature: "test", eventType: "MODEL_CALL", activity: { id: "activity", type: "test" } }
 const usage = { input_tokens: 10, output_tokens: 5, total_tokens: 15 }
 const response = { id: "resp_1", model: "gpt-4.1", status: "completed", service_tier: "default", usage }
 
