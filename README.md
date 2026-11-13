@@ -12,10 +12,10 @@ Install Orlune and your chosen provider SDK:
 
 ```sh
 # OpenAI
-npm install orlune openai
+npm install orlune-sdk openai
 
 # Anthropic
-npm install orlune @anthropic-ai/sdk
+npm install orlune-sdk @anthropic-ai/sdk
 ```
 
 Create an API key in your Orlune application's **API Keys** page. Set `ORLUNE_API_KEY` and your provider's key in your server environment. Keep both secret.
@@ -31,7 +31,7 @@ Set `ORLUNE_API_KEY` and `OPENAI_API_KEY`, then:
 ```ts
 import { randomUUID } from "node:crypto"
 import OpenAI from "openai"
-import { OrluneClient } from "orlune"
+import { OrluneClient } from "orlune-sdk"
 
 const orlune = OrluneClient({ apiKey: process.env.ORLUNE_API_KEY! })
 const openai = orlune.wrap(new OpenAI())
@@ -59,7 +59,7 @@ Set `ORLUNE_API_KEY` and `ANTHROPIC_API_KEY`, then:
 ```ts
 import { randomUUID } from "node:crypto"
 import Anthropic from "@anthropic-ai/sdk"
-import { OrluneClient } from "orlune"
+import { OrluneClient } from "orlune-sdk"
 
 const orlune = OrluneClient({ apiKey: process.env.ORLUNE_API_KEY! })
 const anthropic = orlune.wrap(new Anthropic())
@@ -143,7 +143,7 @@ Anthropic supports both `messages.create({ stream: true, ... })` and `messages.s
 Configure policies in Orlune, then enable checks when you first wrap the provider client:
 
 ```ts
-import { GuardrailErrorMode } from "orlune"
+import { GuardrailErrorMode } from "orlune-sdk"
 
 const openai = orlune.wrap(new OpenAI(), {
   guardrails: {
@@ -173,7 +173,7 @@ Orlune checks **once before each provider invocation**, including streamed calls
 Wrap your provider call in your application's error handling:
 
 ```ts
-import { OrluneGuardrailException, OrluneEvaluationException } from "orlune"
+import { OrluneGuardrailException, OrluneEvaluationException } from "orlune-sdk"
 
 try {
   const response = await openai.responses.create({
@@ -245,7 +245,7 @@ Telemetry is best-effort. Delivery or capture failures do not replace provider r
 To use background delivery:
 
 ```ts
-import { OrluneClient, TelemetryMode } from "orlune"
+import { OrluneClient, TelemetryMode } from "orlune-sdk"
 
 const orlune = OrluneClient({
   apiKey: process.env.ORLUNE_API_KEY!,

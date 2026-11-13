@@ -1,5 +1,5 @@
-import { OrluneClient, TelemetryMode, GuardrailErrorMode } from "orlune"
-import type { OrluneCallMetadata } from "orlune"
+import { OrluneClient, TelemetryMode, GuardrailErrorMode } from "orlune-sdk"
+import type { OrluneCallMetadata } from "orlune-sdk"
 
 const metadata: OrluneCallMetadata = {
   customerId: "customer", eventType: "TEST", activity: { id: "activity", type: "smoke" },

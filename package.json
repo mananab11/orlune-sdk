@@ -1,5 +1,5 @@
 {
-  "name": "orlune",
+  "name": "orlune-sdk",
   "version": "0.1.0",
   "description": "AI usage telemetry and runtime guardrails for OpenAI and Anthropic clients.",
   "engines": { "node": ">=22" },
