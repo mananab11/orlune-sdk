@@ -37,7 +37,7 @@ function setup(t, { api, stream = false, block = false, fail = false } = {}) {
     }
     return Response.json(value, { headers: { "x-request-id": "req_1" } })
   } })
-  const client = OrluneClient({ apiKey: "fake", environment: "sandbox" }).wrap(provider, { guardrails: { enabled: true } })
+  const client = OrluneClient({ apiKey: "fake", baseURL: "https://test.invalid" }).wrap(provider, { guardrails: { enabled: true } })
   const input = { model: "gpt-4.1", stream, orlune_metadata: metadata,
     ...(api === "responses" ? { input: "Hello" } : { messages: [{ role: "user", content: "Hello" }] }) }
   const call = () => api === "responses" ? client.responses.create(input) : client.chat.completions.create(input)

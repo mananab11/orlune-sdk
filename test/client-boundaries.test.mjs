@@ -5,7 +5,7 @@ import * as publicSdk from "../dist/index.js"
 import { createTelemetryDispatcher } from "../dist/internal/telemetry-dispatcher.js"
 import { buildOpenAIUsageEventFromFailure } from "../dist/providers/openai/build-openai-usage-event.js"
 
-const sdk = () => publicSdk.OrluneClient({ apiKey: "test", environment: "sandbox" })
+const sdk = () => publicSdk.OrluneClient({ apiKey: "test", baseURL: "https://test.invalid" })
 const provider = () => new OpenAI({ apiKey: "test" })
 
 test("repeated wraps preserve ownership and reject configuration changes at setup", () => {
@@ -53,10 +53,10 @@ test("invalid queue settings fail immediately; zero retries remains supported", 
     if (field !== "maxRetries") invalid.push(0)
     if (field === "flushIntervalMs") invalid.push(2147483648)
     for (const value of invalid) {
-      assert.throws(() => publicSdk.OrluneClient({ apiKey: "test", environment: "sandbox", telemetryDelivery: { mode: "background_flush", [field]: value } }), new RegExp(field))
+      assert.throws(() => publicSdk.OrluneClient({ apiKey: "test", baseURL: "https://test.invalid", telemetryDelivery: { mode: "background_flush", [field]: value } }), new RegExp(field))
     }
   }
-  assert.doesNotThrow(() => publicSdk.OrluneClient({ apiKey: "test", environment: "sandbox", telemetryDelivery: { mode: "background_flush", maxRetries: 0, maxQueueSize: 1, flushIntervalMs: 1 } }))
+  assert.doesNotThrow(() => publicSdk.OrluneClient({ apiKey: "test", baseURL: "https://test.invalid", telemetryDelivery: { mode: "background_flush", maxRetries: 0, maxQueueSize: 1, flushIntervalMs: 1 } }))
 })
 
 test("dispatcher absorbs sync and background transport failures and only logs", async t => {
@@ -74,7 +74,7 @@ test("dispatcher absorbs sync and background transport failures and only logs", 
 })
 
 test("failure telemetry uses native requestID, preserves aliases, and only then generates an ID", () => {
-  const params = { apiFamily: "OPENAI_RESPONSES", input: { model: "gpt-4.1" }, metadata: { customerId: "test", feature: "test", eventType: "MODEL_CALL" }, startedAt: "2026-11-06T00:00:00Z", completedAt: "2026-11-06T00:00:01Z" }
+  const params = { apiFamily: "OPENAI_RESPONSES", input: { model: "gpt-4.1" }, metadata: { customerId: "test", feature: "test", eventType: "MODEL_CALL", activity: { id: "activity", type: "test" } }, startedAt: "2026-11-06T00:00:00Z", completedAt: "2026-11-06T00:00:01Z" }
   const error = new OpenAI.AuthenticationError(401, {}, "Unauthorized", new Headers({ "x-request-id": "req_native" }))
   error.request_id = "req_alias"
   assert.equal(buildOpenAIUsageEventFromFailure(params, error).event.event.requestId, "req_native")
@@ -84,6 +84,6 @@ test("failure telemetry uses native requestID, preserves aliases, and only then 
   assert.match(buildOpenAIUsageEventFromFailure(params, new Error("failure")).event.event.requestId, /^orlune_req_/)
 })
 
-test("public runtime exports contain only the client and its exceptions", () => {
-  assert.deepEqual(Object.keys(publicSdk).sort(), ["OrluneClient", "OrluneEvaluationException", "OrluneGuardrailException"])
+test("public runtime exports expose the client, exceptions and configuration constants", () => {
+  assert.deepEqual(Object.keys(publicSdk).sort(), ["GuardrailErrorMode", "OrluneClient", "OrluneEvaluationException", "OrluneGuardrailException", "TelemetryMode"])
 })

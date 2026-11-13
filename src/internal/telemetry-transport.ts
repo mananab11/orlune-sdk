@@ -21,8 +21,9 @@ export function createTelemetryTransport(
     async send(event: UsageEventRequest): Promise<void> {
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), timeoutMs)
+      let response: Response | undefined
       try {
-        const response = await fetch(params.endpoint, {
+        response = await fetch(params.endpoint, {
           method: "POST",
           headers: {
             "content-type": "application/json",
@@ -37,6 +38,13 @@ export function createTelemetryTransport(
         }
       } finally {
         clearTimeout(timer)
+        // Only the status matters. Release the unused body without waiting on cleanup.
+        try {
+          void response?.body?.cancel().catch(() => {})
+        } catch {
+          // Cleanup must not change delivery status or the provider's outcome.
+        }
+        controller.abort()
       }
     },
   }

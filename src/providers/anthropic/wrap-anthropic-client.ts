@@ -11,6 +11,7 @@ import { buildAnthropicUsageEvent, anthropicFailureStatus } from "./build-anthro
 import { extractAnthropicPrompt } from "./extract-prompt.js"
 import { observeAnthropicStream } from "./observe-anthropic-stream.js"
 import { preserveGuardrailErrors } from "./preserve-guardrail-errors.js"
+import { captureTelemetry, reportTelemetryError } from "../../internal/capture-telemetry.js"
 
 export function wrapAnthropicClient(client: object, options: WrapProviderClientOptions): object {
   const messages = (client as AnthropicClientShape).messages!
@@ -29,7 +30,7 @@ export function wrapAnthropicClient(client: object, options: WrapProviderClientO
           captureType: streaming ? "STREAM_FINAL" : "RESPONSE" }, result, status, error)
         if (event) await options.telemetryDispatcher.dispatch(event)
       } catch {
-        console.error("[orlune] Anthropic telemetry capture failed.")
+        reportTelemetryError("[orlune] Anthropic telemetry capture failed.")
       }
     }
     return observeApiCall({
@@ -43,7 +44,10 @@ export function wrapAnthropicClient(client: object, options: WrapProviderClientO
         }
         startedAt = new Date().toISOString()
         try { return { value: create.apply(this, [cleanInput, ...args.slice(1)]) } }
-        catch (error) { await emit(undefined, anthropicFailureStatus(error), error); throw error }
+        catch (error) {
+          await captureTelemetry(() => emit(undefined, anthropicFailureStatus(error), error))
+          throw error
+        }
       },
       onResult: async result => {
         if (streaming && result !== null && typeof result === "object" &&

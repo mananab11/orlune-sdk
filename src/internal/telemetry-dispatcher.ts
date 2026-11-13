@@ -4,6 +4,7 @@ import type {
 } from "../types.js"
 import type { UsageEventRequest } from "./usage-event.js"
 import type { TelemetryTransport } from "./telemetry-transport.js"
+import { reportTelemetryError } from "./capture-telemetry.js"
 
 type TelemetryDispatcher = {
   dispatch(event: UsageEventRequest): Promise<void>
@@ -84,7 +85,7 @@ function createQueuedTelemetryDispatcher(
   function enqueue(event: UsageEventRequest) {
     if (queue.length >= options.maxQueueSize) {
       queue.shift()
-      console.error(
+      reportTelemetryError(
         "[orlune] Telemetry queue full; oldest queued event dropped.",
       )
     }
@@ -104,7 +105,7 @@ function createQueuedTelemetryDispatcher(
         entry.attemptCount += 1
 
         if (entry.attemptCount > options.maxRetries) {
-          console.error("[orlune] Telemetry delivery failed; retries exhausted.")
+          reportTelemetryError("[orlune] Telemetry delivery failed; retries exhausted.")
           return
         }
 
@@ -169,7 +170,7 @@ export function createTelemetryDispatcher(
         try {
           await params.transport.send(event)
         } catch {
-          console.error("[orlune] Telemetry delivery failed.")
+          reportTelemetryError("[orlune] Telemetry delivery failed.")
         }
       },
       async flush(): Promise<void> {

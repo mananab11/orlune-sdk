@@ -12,7 +12,6 @@ type UsageCaptureType = "RESPONSE" | "STREAM_FINAL"
 type UsageApiFamily =
   | "OPENAI_RESPONSES"
   | "OPENAI_CHAT_COMPLETIONS"
-  | "OPENAI_AUDIO_TRANSCRIPTIONS"
   | "ANTHROPIC_MESSAGES"
 
 type OperationStatus = "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELED"
@@ -24,7 +23,7 @@ type SdkIdentity = {
 
 type UsageEventOperation = {
   id: string
-  type?: string
+  type: string
   status?: OperationStatus
   startedAt?: string
   completedAt?: string
@@ -44,7 +43,7 @@ type OpenAIUsageEvent = {
   status: UsageEventStatus
   errorCode?: string
   sdk?: SdkIdentity
-  operation?: UsageEventOperation
+  operation: UsageEventOperation
   providerEvent: {
     openai: {
       usage: Record<string, unknown>
@@ -71,7 +70,7 @@ type AnthropicUsageEvent = {
   status: UsageEventStatus
   errorCode?: string
   sdk?: SdkIdentity
-  operation?: UsageEventOperation
+  operation: UsageEventOperation
   providerEvent: {
     anthropic: {
       usage: AnthropicProviderUsage

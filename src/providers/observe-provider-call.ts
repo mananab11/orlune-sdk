@@ -1,3 +1,5 @@
+import { captureTelemetry, reportTelemetryError } from "../internal/capture-telemetry.js"
+
 /** Share one invocation and observation without assuming a provider's promise API. */
 export function observeProviderCall<Result>(params: {
   start: () => Promise<{ value: unknown }>
@@ -12,7 +14,7 @@ export function observeProviderCall<Result>(params: {
   let errorReporting: Promise<void> | undefined
 
   async function reportError(error: unknown): Promise<never> {
-    errorReporting ??= params.onError(error)
+    errorReporting ??= captureTelemetry(() => params.onError(error))
     await errorReporting
     throw error
   }
@@ -29,7 +31,15 @@ export function observeProviderCall<Result>(params: {
 
   return {
     result(): Promise<Result> {
-      result ??= read(async value => params.onResult(await params.readResult(value)))
+      result ??= read(async value => {
+        const providerResult = await params.readResult(value)
+        try {
+          return await params.onResult(providerResult)
+        } catch {
+          reportTelemetryError()
+          return providerResult
+        }
+      })
       return result
     },
     read,

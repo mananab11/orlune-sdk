@@ -12,13 +12,13 @@ import { mergeOrluneMetadata } from "../../metadata/merge-orlune-metadata.js"
 import { stripWrappedRequestMetadata } from "../../metadata/strip-wrapped-request-metadata.js"
 import type {
   UsageApiFamily,
-  WrappedClientRequestMetadata,
 } from "../../types.js"
 import type { WrapProviderClientOptions } from "../provider-adapter.js"
 import { checkGuardrails } from "../../internal/check-guardrails.js"
 import { OrluneEvaluationException } from "../../guardrails.js"
 import { extractOpenAIPrompt } from "./extract-prompt.js"
 import { observeApiCall } from "../observe-api-call.js"
+import { captureTelemetry } from "../../internal/capture-telemetry.js"
 import type { WrappedOpenAIClient } from "./openai-client-types.js"
 
 function warnTelemetryIssues(warnings: string[]) {
@@ -67,29 +67,6 @@ function prepareOpenAIInputForForwarding<TInput>(
   } as TInput
 }
 
-function buildStreamWrapperParams(params: {
-  apiFamily: UsageApiFamily
-  input: unknown
-  metadata: WrappedClientRequestMetadata["orlune_metadata"] | undefined
-  startedAt: string
-  telemetryDispatcher: WrapProviderClientOptions["telemetryDispatcher"]
-}) {
-  return params.metadata === undefined
-    ? {
-        apiFamily: params.apiFamily,
-        input: params.input,
-        startedAt: params.startedAt,
-        telemetryDispatcher: params.telemetryDispatcher,
-      }
-    : {
-        apiFamily: params.apiFamily,
-        input: params.input,
-        metadata: params.metadata,
-        startedAt: params.startedAt,
-        telemetryDispatcher: params.telemetryDispatcher,
-      }
-}
-
 function wrapCreateMethod(
   method: OpenAICreateMethod | undefined,
   apiFamily: UsageApiFamily,
@@ -100,13 +77,6 @@ function wrapCreateMethod(
   }
 
   return function wrappedOpenAICreate(this: unknown, ...args: unknown[]) {
-    if (args.length === 0) {
-      if (options.orluneOptions?.guardrails?.enabled) {
-        return Promise.reject(new OrluneEvaluationException("Guarded calls require customer metadata.", "INVALID_REQUEST"))
-      }
-      return method.apply(this, args)
-    }
-
     const [firstArg, ...restArgs] = args
     const { cleanInput, orluneMetadata } = stripWrappedRequestMetadata(firstArg)
     const forwardedInput = prepareOpenAIInputForForwarding(cleanInput, apiFamily)
@@ -117,21 +87,9 @@ function wrapCreateMethod(
     const isStreaming = isStreamingInput(cleanInput)
 
     let startedAt = new Date().toISOString()
-    const eventBuilderParams =
-      effectiveMetadata === undefined
-        ? {
-            apiFamily,
-            startedAt,
-            input: forwardedInput,
-          }
-        : {
-            apiFamily,
-            metadata: effectiveMetadata,
-            startedAt,
-            input: forwardedInput,
-          }
+    const eventBuilderParams = { apiFamily, metadata: effectiveMetadata, startedAt, input: forwardedInput }
 
-    const onError = async (error: unknown) => {
+    const onError = (error: unknown) => captureTelemetry(async () => {
       const usageEventResult = buildOpenAIUsageEventFromFailure(
         { ...eventBuilderParams, completedAt: new Date().toISOString() }, error,
       )
@@ -139,7 +97,7 @@ function wrapCreateMethod(
       if (usageEventResult.event) {
         await options.telemetryDispatcher.dispatch(usageEventResult.event)
       }
-    }
+    })
 
     return observeApiCall({
       start: async () => {
@@ -166,29 +124,31 @@ function wrapCreateMethod(
         if (isStreaming && isAsyncIterable(result)) {
           return wrapOpenAIStreamResult(
             result,
-            buildStreamWrapperParams({
+            {
               apiFamily,
               input: forwardedInput,
               metadata: effectiveMetadata,
               startedAt,
               telemetryDispatcher: options.telemetryDispatcher,
-            }),
+            },
           )
         }
 
         const completedAt = new Date().toISOString()
-        const usageEventResult = buildOpenAIUsageEventFromSuccess(
-          {
-            ...eventBuilderParams,
-            completedAt,
-          },
-          result,
-        )
-        warnTelemetryIssues(usageEventResult.warnings)
+        await captureTelemetry(async () => {
+          const usageEventResult = buildOpenAIUsageEventFromSuccess(
+            {
+              ...eventBuilderParams,
+              completedAt,
+            },
+            result,
+          )
+          warnTelemetryIssues(usageEventResult.warnings)
 
-        if (usageEventResult.event) {
-          await options.telemetryDispatcher.dispatch(usageEventResult.event)
-        }
+          if (usageEventResult.event) {
+            await options.telemetryDispatcher.dispatch(usageEventResult.event)
+          }
+        })
 
         return result
       },

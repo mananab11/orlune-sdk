@@ -1,26 +1,14 @@
-import type { ClientEnvironment } from "./types.js"
+export const PRODUCTION_BASE_URL = "https://dx02lonqo8.execute-api.us-east-1.amazonaws.com"
 
-export const ORLUNE_PRODUCTION_EVENTS_URL =
-  "https://dx02lonqo8.execute-api.us-east-1.amazonaws.com/v1/events"
-
-export const ORLUNE_DEVELOPMENT_EVENTS_URL =
-  "https://tcum999ahg.execute-api.us-east-1.amazonaws.com/v1/events"
-
-const ORLUNE_SANDBOX_EVENTS_URL =
-  "https://du37zudv2g.execute-api.us-west-2.amazonaws.com/v1/events"
-
-export function resolveEventsEndpoint(environment: ClientEnvironment): string {
-  if (environment === "production") {
-    return ORLUNE_PRODUCTION_EVENTS_URL
+/** A single origin serves ingestion and evaluation; HTTP is only for loopback testing. */
+export function resolveBaseURL(baseURL: string = PRODUCTION_BASE_URL): string {
+  if (typeof baseURL !== "string" || !baseURL.trim()) throw new Error("baseURL must be a valid API origin.")
+  let url: URL
+  try { url = new URL(baseURL) } catch { throw new Error("baseURL must be a valid API origin.") }
+  const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
+  if ((url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) ||
+      url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
+    throw new Error("baseURL must be an HTTPS origin without credentials, path, query, or fragment (HTTP is allowed for localhost).")
   }
-
-  if (environment === "development") {
-    return ORLUNE_DEVELOPMENT_EVENTS_URL
-  }
-
-  if (environment === "sandbox") {
-    return ORLUNE_SANDBOX_EVENTS_URL
-  }
-
-  throw new Error('environment must be "production", "development", or "sandbox".')
+  return url.origin
 }

@@ -6,6 +6,36 @@ import { extractAnthropicPrompt } from "../dist/providers/anthropic/extract-prom
 import { preserveGuardrailErrors } from "../dist/providers/anthropic/preserve-guardrail-errors.js"
 
 const metadata = { customerId: "customer", feature: "support", eventType: "REPLY", activity: { id: "activity", type: "support" } }
+
+for (const guarded of [false, true]) {
+  test(`Anthropic native stream validates metadata before network calls (guarded=${guarded})`, async t => {
+    const s = setup(t, { guarded })
+    for (const [invalid, field] of [
+      [undefined, "activity.type"],
+      [{ ...metadata, customerId: undefined }, "customerId"],
+      [{ ...metadata, eventType: undefined }, "eventType"],
+      [{ ...metadata, activity: { type: "support" } }, "activity.id"],
+      [{ ...metadata, activity: { id: "activity" } }, "activity.type"],
+    ]) {
+      const stream = s.client.messages.stream({ ...s.input, orlune_metadata: invalid })
+      await assert.rejects(stream.finalMessage(), error => error.message.includes(field))
+    }
+    assert.equal(s.calls(), 0)
+    assert.equal(s.checks.length, 0)
+    assert.equal(s.telemetry.length, 0)
+  })
+}
+
+test("Anthropic native stream returns parsed structured output without Orlune projections", async t => {
+  const s = setup(t, { guarded: false })
+  const stream = s.client.messages.stream({ ...s.input, output_config: { format: {
+    type: "json_schema", schema: { type: "object" }, parse: text => ({ answer: text }),
+  } } })
+  const result = await stream.finalMessage()
+  assert.deepEqual(result.parsed_output, { answer: "Hello" })
+  assert.equal(s.calls(), 1)
+  assert.equal(s.telemetry.length, 1)
+})
 const usage = { input_tokens: 100, output_tokens: 30, cache_read_input_tokens: 200,
   cache_creation_input_tokens: 300, cache_creation: { ephemeral_5m_input_tokens: 200, ephemeral_1h_input_tokens: 100 },
   output_tokens_details: { thinking_tokens: 10 }, service_tier: "standard" }
@@ -50,7 +80,7 @@ function setup(t, { block = false, fail = false, events = streamEvents, guarded 
       { headers: { "content-type": "text/event-stream", "request-id": "req_stream" } })
     return Response.json(message, { headers: { "request-id": "req_response" } })
   } })
-  const sdk = OrluneClient({ apiKey: "fake", environment: "sandbox", telemetryDelivery: delivery })
+  const sdk = OrluneClient({ apiKey: "fake", baseURL: "https://test.invalid", telemetryDelivery: delivery })
   const client = sdk.wrap(provider, { guardrails: { enabled: guarded } })
   const input = { model: "claude-haiku-4-5", max_tokens: 100, system: "Trusted instructions",
     messages: [{ role: "user", content: "Hello" }], orlune_metadata: metadata }

@@ -25,7 +25,7 @@ for (const api of ["responses", "chat"]) {
             if (api === "chat") yield { id: response.id, usage: response.usage, choices: [] }
           } }
         }
-        const client = OrluneClient({ apiKey: "test", environment: "sandbox", telemetryDelivery: { mode: "sync" } })
+        const client = OrluneClient({ apiKey: "test", baseURL: "https://test.invalid", telemetryDelivery: { mode: "sync" } })
           .wrap(api === "responses" ? { baseURL: "https://api.openai.com/v1", responses: { create } } : { baseURL: "https://api.openai.com/v1", chat: { completions: { create } } })
         const method = api === "responses" ? client.responses.create : client.chat.completions.create
         const result = await method({ model: "gpt-4.1", service_tier: "flex", tools: [{ type: "web_search" }], stream,

@@ -11,7 +11,7 @@ const result = (decision = "ALLOW") => ({
   matchedRule: decision === "BLOCK" ? { id: "rule", name: "Daily limit", message: "Daily budget reached" } : null,
   details: { observedValue: 101, thresholdValue: 100 },
 })
-const makeClient = (options = {}) => OrluneClient({ apiKey: "key", environment: "production", ...options })
+const makeClient = (options = {}) => OrluneClient({ apiKey: "key",  ...options })
 const response = { _request_id: "req-1", model: "gpt-4.1-mini", usage: { input_tokens: 1, output_tokens: 2, total_tokens: 3 } }
 const quotaResult = {
   evaluationId: "quota-check-1", evaluatedAt: "2026-10-04T00:00:00Z",
@@ -407,8 +407,8 @@ test("invalid metadata never fails open and malformed responses never become an 
   const endpoint = { create() { assert.fail("provider should not run") } }
   const sdk = makeClient()
   sdk.wrap({ baseURL: "https://api.openai.com/v1", responses: endpoint }, { guardrails: { enabled: true, onError: "allow" } })
-  await assert.rejects(endpoint.create({ orlune_metadata: { activity: { id: "activity", type: "test" } } }), (error) => error.code === "INVALID_REQUEST")
-  await assert.rejects(endpoint.create(), (error) => error.code === "INVALID_REQUEST")
+  assert.throws(() => endpoint.create({ orlune_metadata: { activity: { id: "activity", type: "test" } } }), /customerId/)
+  assert.throws(() => endpoint.create(), /activity.type/)
   assert.equal(fetch.mock.callCount(), 0)
   await assert.rejects(sdk.evaluate(request), (error) => error.code === "INVALID_RESPONSE")
 })

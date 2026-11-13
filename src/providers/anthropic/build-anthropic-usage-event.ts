@@ -51,12 +51,12 @@ export function buildAnthropicUsageEvent(
     requestId, occurredAt: completedAt, customerId, eventType, model, status,
     feature: text(metadata.feature) ?? "UNKNOWN",
     ...(errorCode ? { errorCode } : {}),
-    ...(metadata.activity?.id ? { operation: {
+    operation: {
       id: metadata.activity.id,
-      ...(metadata.activity.type ? { type: metadata.activity.type } : {}),
+      type: metadata.activity.type,
       startedAt, completedAt,
       status: status === "SUCCEEDED" ? "SUCCEEDED" : status === "CANCELED" ? "CANCELED" : "FAILED",
-    } } : {}),
+    },
     providerEvent: { anthropic: {
       // Take a snapshot before returning mutable provider data to the application.
       usage: structuredClone(record(response.usage)),

@@ -1,6 +1,8 @@
+import type { GuardrailErrorMode } from "./options.js"
+
 export type EvaluationRequest = { customerId: string; feature?: string; activityId: string; activityType: string; prompt?: string }
 export type EvaluationOptions = { timeoutMs?: number; signal?: AbortSignal }
-export type GuardrailOptions = { enabled: boolean; onError?: "throw" | "allow"; timeoutMs?: number }
+export type GuardrailOptions = { enabled: boolean; onError?: typeof GuardrailErrorMode[keyof typeof GuardrailErrorMode]; timeoutMs?: number }
 type EvaluationBase = {
   evaluationId: string
   evaluatedAt: string

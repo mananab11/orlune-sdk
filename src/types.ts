@@ -1,11 +1,11 @@
 import type { EvaluationOptions, EvaluationRequest, EvaluationResult, GuardrailOptions } from "./guardrails.js"
 import type { WrappedProviderClient } from "./providers/provider-client-types.js"
-
-export type ClientEnvironment = "production" | "development" | "sandbox"
+import type { TelemetryMode } from "./options.js"
 
 export type CreateClientOptions = {
   apiKey: string
-  environment: ClientEnvironment
+  /** Orlune API origin. Defaults to production; override for local testing. */
+  baseURL?: string
   telemetryDelivery?: TelemetryDeliveryOptions
   evaluationTimeoutMs?: number
 }
@@ -20,28 +20,27 @@ export type OrluneWrapDefaults = {
 }
 
 export type OrluneCallMetadata = {
-  customerId?: string
+  customerId: string
   feature?: string
-  eventType?: string
+  eventType: string
   activity: OrluneActivityMetadata
 }
 
 export type UsageApiFamily =
   | "OPENAI_RESPONSES"
   | "OPENAI_CHAT_COMPLETIONS"
-  | "OPENAI_AUDIO_TRANSCRIPTIONS"
   | "ANTHROPIC_MESSAGES"
 
-export type TelemetryDeliveryMode = "sync" | "background_flush"
+export type TelemetryDeliveryMode = typeof TelemetryMode[keyof typeof TelemetryMode]
 
 export type SyncTelemetryDeliveryOptions = {
-  mode: "sync"
+  mode: typeof TelemetryMode.Sync
   /** Per-send timeout in milliseconds. Defaults to 5000. */
   timeoutMs?: number
 }
 
 export type BackgroundFlushTelemetryDeliveryOptions = {
-  mode: "background_flush"
+  mode: typeof TelemetryMode.BackgroundFlush
   /** Per-send timeout in milliseconds, including each retry. Defaults to 5000. */
   timeoutMs?: number
   maxQueueSize?: number

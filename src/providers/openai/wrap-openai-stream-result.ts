@@ -5,11 +5,12 @@ import {
 import type { TelemetryDispatcher } from "../../internal/telemetry-dispatcher.js"
 import type { UsageApiFamily } from "../../internal/usage-event.js"
 import type { OrluneCallMetadata } from "../../types.js"
+import { captureTelemetry, reportTelemetryError } from "../../internal/capture-telemetry.js"
 
 type OpenAIStreamWrapperParams = {
   apiFamily: UsageApiFamily
   input: unknown
-  metadata?: OrluneCallMetadata
+  metadata: OrluneCallMetadata
   startedAt: string
   telemetryDispatcher: TelemetryDispatcher
 }
@@ -42,29 +43,6 @@ function warnTelemetryIssues(warnings: string[]) {
   for (const warning of warnings) {
     console.warn(`[orlune] ${warning}`)
   }
-}
-
-function buildEventBuilderParams(params: {
-  apiFamily: UsageApiFamily
-  completedAt: string
-  input: unknown
-  metadata: OrluneCallMetadata | undefined
-  startedAt: string
-}) {
-  return params.metadata === undefined
-    ? {
-        apiFamily: params.apiFamily,
-        completedAt: params.completedAt,
-        input: params.input,
-        startedAt: params.startedAt,
-      }
-    : {
-        apiFamily: params.apiFamily,
-        completedAt: params.completedAt,
-        input: params.input,
-        metadata: params.metadata,
-        startedAt: params.startedAt,
-      }
 }
 
 function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
@@ -138,7 +116,7 @@ function observeChatCompletionChunk(
   const usage = (chunk as ChatCompletionChunkLike).usage
 
   if (isRecord(usage)) {
-    state.usage = usage
+    state.usage = structuredClone(usage)
   }
 
   const rawChoices = (chunk as ChatCompletionChunkLike).choices
@@ -173,6 +151,8 @@ export function wrapOpenAIStreamResult<TResult extends object>(
   }
 
   let telemetrySettled = false
+  let pendingOperations = 0
+  let removeAbortListener = () => {}
   let completionObserved = false
   const finishedChoices = new Set<number>()
   const expectedChoices = isRecord(params.input) && typeof params.input.n === "number"
@@ -188,7 +168,7 @@ export function wrapOpenAIStreamResult<TResult extends object>(
   } = {}
   let finalResponsesResponse: Record<string, unknown> | null = null
 
-  async function dispatchResult() {
+  const dispatchResult = () => captureTelemetry(async () => {
     if (telemetrySettled) {
       return
     }
@@ -205,15 +185,16 @@ export function wrapOpenAIStreamResult<TResult extends object>(
     }
 
     telemetrySettled = true
+    removeAbortListener()
 
     const usageEventResult = buildOpenAIUsageEventFromStreamResult(
-      buildEventBuilderParams({
+      {
         apiFamily: params.apiFamily,
         completedAt,
         input: params.input,
         metadata: params.metadata,
         startedAt: params.startedAt,
-      }),
+      },
       successSource,
       terminalStatus,
       terminalErrorCode,
@@ -223,9 +204,9 @@ export function wrapOpenAIStreamResult<TResult extends object>(
     if (usageEventResult.event) {
       await params.telemetryDispatcher.dispatch(usageEventResult.event)
     }
-  }
+  })
 
-  async function dispatchFailure(error: unknown) {
+  const dispatchFailure = (error: unknown) => captureTelemetry(async () => {
     if (telemetrySettled) {
       return
     }
@@ -237,15 +218,16 @@ export function wrapOpenAIStreamResult<TResult extends object>(
     }
 
     telemetrySettled = true
+    removeAbortListener()
     const completedAt = new Date().toISOString()
     const usageEventResult = buildOpenAIUsageEventFromFailure(
-      buildEventBuilderParams({
+      {
         apiFamily: params.apiFamily,
         completedAt,
         input: params.input,
         metadata: params.metadata,
         startedAt: params.startedAt,
-      }),
+      },
       error,
       "STREAM_FINAL",
     )
@@ -254,12 +236,22 @@ export function wrapOpenAIStreamResult<TResult extends object>(
     if (usageEventResult.event) {
       await params.telemetryDispatcher.dispatch(usageEventResult.event)
     }
-  }
+  })
 
   function observeItem(item: unknown) {
     if (params.apiFamily === "OPENAI_RESPONSES") {
       if (isTerminalResponsesEvent(item)) {
-        finalResponsesResponse = item.response as Record<string, unknown>
+        const response = item.response as Record<string, unknown>
+        // Retain only telemetry fields, detached before exposing the event to the caller.
+        finalResponsesResponse = structuredClone({
+          id: response.id, model: response.model, usage: response.usage,
+          _request_id: response._request_id,
+          service_tier: response.service_tier, error: response.error,
+          incomplete_details: response.incomplete_details,
+          output: Array.isArray(response.output) ? response.output.filter(isRecord).map(
+            item => ({ type: item.type, finish_reason: item.finish_reason }),
+          ) : undefined,
+        })
         completionObserved = true
         terminalStatus = item.type === "response.completed" ? "SUCCEEDED" : "FAILED"
         const error = finalResponsesResponse.error
@@ -299,11 +291,18 @@ export function wrapOpenAIStreamResult<TResult extends object>(
     ? () => nativeIterator.call(result) as AsyncIterator<unknown>
     : () => result[Symbol.asyncIterator]()
 
+  const onAbort = () => {
+    // Native iteration also aborts during cleanup. Let an in-flight operation
+    // report its real result/error rather than racing it with cancellation.
+    if (pendingOperations === 0) void dispatchFailure(createCanceledStreamError())
+  }
+
   function wrappedAsyncIterator() {
     const originalIterator = createIterator()
 
     return {
       async next(...args: [] | [unknown]) {
+        pendingOperations++
         try {
           const iteration = await originalIterator.next(...args)
 
@@ -321,14 +320,24 @@ export function wrapOpenAIStreamResult<TResult extends object>(
             return iteration
           }
 
-          observeItem(iteration.value)
+          try {
+            if (!telemetrySettled) observeItem(iteration.value)
+          } catch {
+            telemetrySettled = true
+            removeAbortListener()
+            reportTelemetryError()
+          }
           return iteration
         } catch (error) {
           await dispatchFailure(error)
           throw error
+        } finally {
+          pendingOperations--
+          if (controller?.signal.aborted) onAbort()
         }
       },
       async return(value?: unknown) {
+        pendingOperations++
         try {
           const iteration = typeof originalIterator.return === "function"
             ? await originalIterator.return(value)
@@ -339,9 +348,13 @@ export function wrapOpenAIStreamResult<TResult extends object>(
         } catch (error) {
           await dispatchFailure(error)
           throw error
+        } finally {
+          pendingOperations--
+          if (controller?.signal.aborted) onAbort()
         }
       },
       async throw(error?: unknown) {
+        pendingOperations++
         try {
           if (typeof originalIterator.throw === "function") {
             return await originalIterator.throw(error)
@@ -351,6 +364,9 @@ export function wrapOpenAIStreamResult<TResult extends object>(
         } catch (caughtError) {
           await dispatchFailure(caughtError)
           throw caughtError
+        } finally {
+          pendingOperations--
+          if (controller?.signal.aborted) onAbort()
         }
       },
       [Symbol.asyncIterator]() {
@@ -359,16 +375,34 @@ export function wrapOpenAIStreamResult<TResult extends object>(
     }
   }
 
-  if (hasNativeFactory) {
-    Reflect.set(result, "iterator", wrappedAsyncIterator)
+  const iteratorDescriptor = Object.getOwnPropertyDescriptor(result, Symbol.asyncIterator)
+  if (!hasNativeFactory && iteratorDescriptor?.configurable === false &&
+      ("value" in iteratorDescriptor && iteratorDescriptor.writable === false)) {
+    reportTelemetryError()
     return result
   }
-
-  return new Proxy(result, {
+  const observed = hasNativeFactory ? result : new Proxy(result, {
     get(target, property, receiver) {
       return property === Symbol.asyncIterator
         ? wrappedAsyncIterator
         : Reflect.get(target, property, receiver)
     },
   })
+  try {
+    if (hasNativeFactory && !Reflect.set(result, "iterator", wrappedAsyncIterator)) {
+      reportTelemetryError()
+      return result
+    }
+    if (controller) {
+      removeAbortListener = () => controller.signal.removeEventListener("abort", onAbort)
+      controller.signal.addEventListener("abort", onAbort, { once: true })
+      if (controller.signal.aborted) onAbort()
+    }
+    return observed
+  } catch {
+    telemetrySettled = true
+    try { removeAbortListener() } catch { /* Best effort cleanup. */ }
+    reportTelemetryError()
+    return result
+  }
 }

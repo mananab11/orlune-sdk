@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import { observeProviderCall } from "../dist/providers/observe-provider-call.js"
 import { stripWrappedRequestMetadata } from "../dist/metadata/strip-wrapped-request-metadata.js"
 import { OrluneClient } from "../dist/index.js"
-import { detectSupportedProvider } from "../dist/providers/detect-client.js"
+import { getProviderAdapter } from "../dist/providers/get-provider-adapter.js"
 
 test("shared lifecycle observes a provider-specific result without OpenAI helpers", async () => {
   let invocations = 0
@@ -70,9 +70,9 @@ test("metadata extraction is provider-neutral and does not mutate input", () => 
 })
 
 test("adapter registry identifies supported methods and rejects unimplemented providers", () => {
-  assert.equal(detectSupportedProvider({ baseURL: "https://api.openai.com/v1", responses: { create() {} } }), "OPENAI")
-  assert.equal(detectSupportedProvider({ baseURL: "https://api.openai.com/v1", chat: { completions: { create() {} } } }), "OPENAI")
+  assert.equal(getProviderAdapter({ baseURL: "https://api.openai.com/v1", responses: { create() {} } })?.provider, "OPENAI")
+  assert.equal(getProviderAdapter({ baseURL: "https://api.openai.com/v1", chat: { completions: { create() {} } } })?.provider, "OPENAI")
   const unknown = { messages: { create() {} } }
-  assert.equal(detectSupportedProvider(unknown), null)
-  assert.throws(() => OrluneClient({ apiKey: "test", environment: "sandbox" }).wrap(unknown), /Unsupported provider/)
+  assert.equal(getProviderAdapter(unknown), null)
+  assert.throws(() => OrluneClient({ apiKey: "test", baseURL: "https://test.invalid" }).wrap(unknown), /Unsupported provider/)
 })

@@ -44,7 +44,7 @@ test("wrapped OpenAI responses.create strips orlune_metadata and sends telemetry
 
     const orlune = OrluneClient({
       apiKey: "orlune_test_key",
-      environment: "production",
+
       telemetryDelivery: {
         mode: "sync",
       },
@@ -139,7 +139,7 @@ test("wrapping the same OpenAI client twice is idempotent", async () => {
 
     const orlune = OrluneClient({
       apiKey: "orlune_test_key",
-      environment: "production",
+
       telemetryDelivery: {
         mode: "sync",
       },
@@ -203,7 +203,7 @@ test("wrapped OpenAI responses.create rethrows provider error after sending fail
 
     const orlune = OrluneClient({
       apiKey: "orlune_test_key",
-      environment: "production",
+
       telemetryDelivery: {
         mode: "sync",
       },
@@ -248,7 +248,7 @@ test("wrapped OpenAI responses.create rethrows provider error after sending fail
   }
 })
 
-test("wrapped OpenAI responses.create skips telemetry and warns when eventType is missing", async () => {
+test("wrapped OpenAI responses.create rejects missing eventType before calling the provider", async () => {
   const sentRequests = []
   const warnings = []
   const originalFetch = globalThis.fetch
@@ -272,7 +272,7 @@ test("wrapped OpenAI responses.create skips telemetry and warns when eventType i
       baseURL: "https://api.openai.com/v1",
       responses: {
         async create(input) {
-          assert.equal("orlune_metadata" in input, false)
+          assert.fail("Provider must not run without eventType")
 
           return {
             _request_id: "req_provider_789",
@@ -295,7 +295,7 @@ test("wrapped OpenAI responses.create skips telemetry and warns when eventType i
 
     const orlune = OrluneClient({
       apiKey: "orlune_test_key",
-      environment: "production",
+
       telemetryDelivery: {
         mode: "sync",
       },
@@ -307,20 +307,16 @@ test("wrapped OpenAI responses.create skips telemetry and warns when eventType i
       },
     })
 
-    const result = await wrappedClient.responses.create({
+    assert.throws(() => wrappedClient.responses.create({
       model: "gpt-4.1-mini",
       input: "Hello",
       orlune_metadata: {
         activity: { id: "activity", type: "test" },
         customerId: "customer_123",
       },
-    })
-
-    assert.equal(result.model, "gpt-4.1-mini")
+    }), /eventType/)
     assert.equal(sentRequests.length, 0)
-    assert.deepEqual(warnings, [
-      "[orlune] Skipping OpenAI telemetry because eventType is missing.",
-    ])
+    assert.deepEqual(warnings, [])
   } finally {
     globalThis.fetch = originalFetch
     console.warn = originalWarn
@@ -386,7 +382,7 @@ test("wrapped OpenAI chat.completions.create sends one terminal telemetry event 
 
     const orlune = OrluneClient({
       apiKey: "orlune_test_key",
-      environment: "production",
+
       telemetryDelivery: {
         mode: "sync",
       },
@@ -488,7 +484,7 @@ test("wrapped OpenAI responses.create sends one terminal telemetry event for str
 
     const orlune = OrluneClient({
       apiKey: "orlune_test_key",
-      environment: "production",
+
       telemetryDelivery: {
         mode: "sync",
       },
@@ -587,7 +583,7 @@ test("wrapped OpenAI streamed call sends canceled terminal telemetry when consum
 
     const orlune = OrluneClient({
       apiKey: "orlune_test_key",
-      environment: "production",
+
       telemetryDelivery: {
         mode: "sync",
       },

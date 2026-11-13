@@ -1,24 +1,40 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { OrluneClient } from "../dist/index.js"
-import { resolveEventsEndpoint, ORLUNE_PRODUCTION_EVENTS_URL, ORLUNE_DEVELOPMENT_EVENTS_URL } from "../dist/config.js"
+import { resolveBaseURL, PRODUCTION_BASE_URL } from "../dist/config.js"
 
-test("environment routing keeps production, development, and sandbox separate", () => {
-  assert.equal(ORLUNE_PRODUCTION_EVENTS_URL, "https://dx02lonqo8.execute-api.us-east-1.amazonaws.com/v1/events")
-  assert.equal(ORLUNE_DEVELOPMENT_EVENTS_URL, "https://tcum999ahg.execute-api.us-east-1.amazonaws.com/v1/events")
-  assert.equal(resolveEventsEndpoint("production"), ORLUNE_PRODUCTION_EVENTS_URL)
-  assert.equal(resolveEventsEndpoint("development"), ORLUNE_DEVELOPMENT_EVENTS_URL)
-  assert.equal(resolveEventsEndpoint("sandbox"), "https://du37zudv2g.execute-api.us-west-2.amazonaws.com/v1/events")
-})
-
-test("client initialization rejects invalid or missing environments", () => {
-  for (const environment of [undefined, null, "", "prod", "Sandbox", " sandbox ", 1, {}]) {
-    assert.throws(
-      () => OrluneClient({ apiKey: "test", environment }),
-      /environment must be "production", "development", or "sandbox"/,
-    )
-  }
-  for (const environment of ["production", "development", "sandbox"]) {
-    assert.doesNotThrow(() => OrluneClient({ apiKey: "test", environment }))
+test("baseURL defaults to production and normalizes valid testing origins", () => {
+  assert.equal(resolveBaseURL(), PRODUCTION_BASE_URL)
+  for (const url of ["https://test.invalid", "http://localhost:3100", "http://127.0.0.1:3100", "http://[::1]:3100"]) {
+    assert.equal(resolveBaseURL(url + "/"), url)
   }
 })
+
+test("invalid baseURL and removed environment option fail before any request", () => {
+  for (const baseURL of [null, "", " ", 1, {}, "sandbox", "http://test.invalid",
+    "ftp://localhost", "https://user:password@test.invalid", "https://test.invalid/v1",
+    "https://test.invalid?token=x", "https://test.invalid#fragment"]) {
+    assert.throws(() => OrluneClient({ apiKey: "test", baseURL }), /baseURL/)
+  }
+  assert.throws(() => OrluneClient({ apiKey: "test", environment: "sandbox" }), /no longer supported/)
+})
+
+for (const baseURL of [undefined, "https://test.invalid/", "http://localhost:3100"]) {
+  test(`telemetry and evaluation use the same origin: ${baseURL ?? "production"}`, async t => {
+    const urls = []
+    t.mock.method(globalThis, "fetch", async url => {
+      urls.push(url)
+      return url.endsWith("/evaluate")
+        ? Response.json({ evaluationId: "eval", evaluatedAt: new Date().toISOString(), reasonCode: "NO_ACTIVE_POLICIES", decision: "NOT_EVALUATED", matchedRule: null })
+        : new Response(null, { status: 202 })
+    })
+    const sdk = OrluneClient({ apiKey: "test", ...(baseURL === undefined ? {} : { baseURL }) })
+    const client = sdk.wrap({ baseURL: "https://api.openai.com/v1", responses: {
+      async create() { return { id: "request", model: "model", status: "completed", usage: { input_tokens: 1, output_tokens: 1 } } },
+    } })
+    await client.responses.create({ orlune_metadata: { customerId: "customer", eventType: "TEST", feature: "test", activity: { id: "activity", type: "test" } } })
+    await sdk.evaluate({ customerId: "customer", activityId: "activity", activityType: "test" })
+    const origin = baseURL ?? PRODUCTION_BASE_URL
+    assert.deepEqual(urls, [new URL("/v1/events", origin).href, new URL("/v1/guardrails/evaluate", origin).href])
+  })
+}

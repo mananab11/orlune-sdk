@@ -1,4 +1,5 @@
 import { OrluneEvaluationException, type EvaluationRequest, type EvaluationOptions, type EvaluationResult } from "../guardrails.js"
+import { reportWarning } from "./report-warning.js"
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -39,7 +40,7 @@ export function createEvaluator(apiKey: string, endpoint: string, defaultTimeout
     }
     let prompt = request.prompt
     if (prompt !== undefined && prompt.length > 100_000) {
-      console.warn("[orlune] Prompt exceeds 100000 characters; analyzing only the beginning. Remaining text will not be checked.")
+      reportWarning("[orlune] Prompt exceeds 100000 characters; analyzing only the beginning. Remaining text will not be checked.")
       let end = 100_000
       // Avoid splitting a UTF-16 surrogate pair at the transport limit.
       const last = prompt.charCodeAt(end - 1)

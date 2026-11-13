@@ -47,7 +47,7 @@ test("background telemetry snapshots usage without changing the provider respons
   const response = { _request_id: "req_snapshot", model: "gpt-4.1-mini", usage }
   const orlune = OrluneClient({
     apiKey: "test",
-    environment: "sandbox",
+    baseURL: "https://test.invalid",
     telemetryDelivery: { mode: "background_flush", flushIntervalMs: 60_000 },
   })
   t.after(() => orlune.flush())
@@ -91,7 +91,7 @@ test("background_flush can be explicitly drained with orlune.flush before the ti
   try {
     const orlune = OrluneClient({
       apiKey: "orlune_test_key",
-      environment: "production",
+
       telemetryDelivery: {
         mode: "background_flush",
         flushIntervalMs: 60_000,
@@ -140,7 +140,7 @@ test("background_flush delivers queued telemetry without explicit flush", async 
   try {
     const orlune = OrluneClient({
       apiKey: "orlune_test_key",
-      environment: "production",
+
       telemetryDelivery: {
         mode: "background_flush",
         flushIntervalMs: 10,
@@ -189,7 +189,7 @@ test("background_flush flushes pending telemetry when orlune.flush is called", a
   try {
     const orlune = OrluneClient({
       apiKey: "orlune_test_key",
-      environment: "production",
+
       telemetryDelivery: {
         mode: "background_flush",
         flushIntervalMs: 60_000,

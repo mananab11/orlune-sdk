@@ -7,7 +7,7 @@ async function capture(chunks, apiFamily, { stopEarly = false, n = 1 } = {}) {
   const source = { async *[Symbol.asyncIterator]() { yield* chunks } }
   const stream = wrapOpenAIStreamResult(source, {
     apiFamily, input: { model: "gpt-4.1", n },
-    metadata: { customerId: "customer", feature: "test", eventType: "MODEL_CALL" },
+    metadata: { customerId: "customer", feature: "test", eventType: "MODEL_CALL", activity: { id: "activity", type: "test" } },
     startedAt: new Date().toISOString(),
     telemetryDispatcher: { async dispatch(request) { events.push(request.event) } },
   })
@@ -88,7 +88,7 @@ for (const apiFamily of ["OPENAI_RESPONSES", "OPENAI_CHAT_COMPLETIONS"]) {
     const stream = wrapOpenAIStreamResult(source, {
       apiFamily,
       input: { model: "gpt-4.1", stream: true },
-      metadata: { customerId: "customer", feature: "test", eventType: "MODEL_CALL" },
+      metadata: { customerId: "customer", feature: "test", eventType: "MODEL_CALL", activity: { id: "activity", type: "test" } },
       startedAt: new Date().toISOString(),
       telemetryDispatcher: { async dispatch(request) { events.push(request.event) } },
     })

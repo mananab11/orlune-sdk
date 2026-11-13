@@ -10,7 +10,7 @@ import type { OrluneCallMetadata } from "../../types.js"
 
 type OpenAIEventBuilderParams = {
   apiFamily: UsageApiFamily
-  metadata?: OrluneCallMetadata
+  metadata: OrluneCallMetadata
   startedAt: string
   completedAt: string
   input: unknown
@@ -180,19 +180,14 @@ function resolveRequiredString(params: {
 }
 
 function buildOperation(
-  metadata: OrluneCallMetadata | undefined,
+  metadata: OrluneCallMetadata,
   startedAt: string,
   completedAt: string,
   status: UsageEventStatus,
-): UsageEventOperation | undefined {
-  const operationId = getString(metadata?.activity?.id)
-
-  if (!operationId) {
-    return undefined
-  }
-
+): UsageEventOperation {
   const operation: UsageEventOperation = {
-    id: operationId,
+    id: metadata.activity.id,
+    type: metadata.activity.type,
     status:
       status === "SUCCEEDED"
         ? "SUCCEEDED"
@@ -201,12 +196,6 @@ function buildOperation(
           : "FAILED",
     startedAt,
     completedAt,
-  }
-
-  const operationType = getString(metadata?.activity?.type)
-
-  if (operationType) {
-    operation.type = operationType
   }
 
   return operation
@@ -277,6 +266,7 @@ function buildBaseEvent(
     apiFamily: params.apiFamily,
     model,
     status,
+    operation: buildOperation(params.metadata, params.startedAt, params.completedAt, status),
     providerEvent: {
       openai: {
         usage: isRecord(result) ? getUsageRecord((result as OpenAIResponseLike).usage) : {},
@@ -293,12 +283,6 @@ function buildBaseEvent(
 
   if (finishReason) {
     event.providerEvent.openai.finishReason = finishReason
-  }
-
-  const operation = buildOperation(params.metadata, params.startedAt, params.completedAt, status)
-
-  if (operation) {
-    event.operation = operation
   }
 
   return {
@@ -402,6 +386,7 @@ export function buildOpenAIUsageEventFromFailure(
     apiFamily: params.apiFamily,
     model,
     status,
+    operation: buildOperation(params.metadata, params.startedAt, params.completedAt, status),
     providerEvent: {
       openai: {
         usage: {},
@@ -414,12 +399,6 @@ export function buildOpenAIUsageEventFromFailure(
 
   if (errorCode) {
     event.errorCode = errorCode
-  }
-
-  const operation = buildOperation(params.metadata, params.startedAt, params.completedAt, status)
-
-  if (operation) {
-    event.operation = operation
   }
 
   return {

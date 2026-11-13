@@ -1,10 +1,16 @@
 import OpenAI from "openai"
-import { OrluneClient } from "../../dist/index.js"
+import { OrluneClient, TelemetryMode, GuardrailErrorMode } from "../../dist/index.js"
 import type { WithMetadataAtPath } from "../../dist/providers/wrapped-client-types.js"
 
-const sdk = OrluneClient({ apiKey: "test", environment: "sandbox" })
+const sdk = OrluneClient({ apiKey: "test", baseURL: "https://test.invalid", telemetryDelivery: { mode: TelemetryMode.Sync } })
+OrluneClient({ apiKey: "test" })
 const client = sdk.wrap(new OpenAI({ apiKey: "test" }))
 const metadata = { customerId: "customer", eventType: "MODEL_CALL", activity: { id: "conversation", type: "support" } }
+sdk.wrap(new OpenAI({ apiKey: "test" }), { guardrails: { enabled: true, onError: GuardrailErrorMode.Allow } })
+// @ts-expect-error customerId is required
+client.responses.create({ model: "gpt-4.1", orlune_metadata: { eventType: "CALL", activity: metadata.activity } })
+// @ts-expect-error eventType is required
+client.responses.create({ model: "gpt-4.1", orlune_metadata: { customerId: "customer", activity: metadata.activity } })
 const response = await client.responses.create({ model: "gpt-4.1", input: "Hi", orlune_metadata: metadata })
 response.output_text satisfies string
 const stream = await client.responses.create({ model: "gpt-4.1", input: "Hi", stream: true, orlune_metadata: metadata })
