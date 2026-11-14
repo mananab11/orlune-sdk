@@ -70,7 +70,7 @@ test("wrapped OpenAI responses.create strips orlune_metadata and sends telemetry
     assert.equal(sentRequests.length, 1)
     assert.equal(
       sentRequests[0].url,
-      "https://dx02lonqo8.execute-api.us-east-1.amazonaws.com/v1/events",
+      "https://api.orlune.ai/v1/events",
     )
     assert.equal(sentRequests[0].init.method, "POST")
     assert.equal(sentRequests[0].init.headers.authorization, "Bearer orlune_test_key")

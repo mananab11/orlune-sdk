@@ -20,10 +20,11 @@ try {
   assert.ok(pack.files.some(file => file.path === "dist/index.d.ts"))
   assert.ok(!pack.files.some(file => /(^|\/)(node_modules|test|\.env)(\/|$)/.test(file.path)))
   const { PRODUCTION_BASE_URL } = await import("../dist/config.js")
+  assert.equal(PRODUCTION_BASE_URL, "https://api.orlune.ai")
   for (const file of pack.files) {
     const contents = await readFile(join(root, file.path), "utf8")
     const endpoints = contents.match(/https:\/\/[a-z0-9]+\.execute-api\.[a-z0-9-]+\.amazonaws\.com/g) ?? []
-    assert.ok(endpoints.every(endpoint => endpoint === PRODUCTION_BASE_URL), `Nonproduction API endpoint in ${file.path}`)
+    assert.equal(endpoints.length, 0, `Raw API Gateway endpoint in ${file.path}`)
   }
   await writeFile(join(directory, "package.json"), JSON.stringify({ private: true, type: "module" }))
   run(npm, ["install", join(directory, pack.filename), "--offline", "--ignore-scripts", "--no-audit", "--no-fund"], directory)

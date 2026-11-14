@@ -1,8 +1,10 @@
 {
   "name": "orlune-sdk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "AI usage telemetry and runtime guardrails for OpenAI and Anthropic clients.",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

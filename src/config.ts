@@ -1,4 +1,4 @@
-export const PRODUCTION_BASE_URL = "https://dx02lonqo8.execute-api.us-east-1.amazonaws.com"
+export const PRODUCTION_BASE_URL = "https://api.orlune.ai"
 
 /** A single origin serves ingestion and evaluation; HTTP is only for loopback testing. */
 export function resolveBaseURL(baseURL: string = PRODUCTION_BASE_URL): string {
