@@ -140,21 +140,21 @@ Anthropic supports both `messages.create({ stream: true, ... })` and `messages.s
 
 ## Enable Guardrails
 
-Configure policies in Orlune, then enable checks when you first wrap the provider client:
+Configure policies in Orlune, then enable checks when creating the Orlune client:
 
 ```ts
-import { GuardrailErrorMode } from "orlune-sdk"
+import { OrluneClient, GuardrailErrorMode } from "orlune-sdk"
 
-const openai = orlune.wrap(new OpenAI(), {
+const orlune = OrluneClient({
+  apiKey: process.env.ORLUNE_API_KEY!,
   guardrails: {
     enabled: true,
     onError: GuardrailErrorMode.Throw,
-    timeoutMs: 5000,
   },
 })
 ```
 
-Use this in place of the quick start's `wrap()` call. The same options work with Anthropic.
+Use this in place of the quick start's `OrluneClient()` initialization. These settings apply to every OpenAI and Anthropic client you wrap with this instance. Configure once; settings are captured at initialization.
 
 Orlune checks **once before each provider invocation**, including streamed calls. It does not check each output chunk.
 
@@ -216,8 +216,7 @@ For explicit control, call the evaluator directly:
 ```ts
 const result = await orlune.evaluate({
   customerId: "customer-123",
-  activityId: randomUUID(),
-  activityType: "create_product_listing",
+  activity: { id: randomUUID(), type: "create_product_listing" },
   feature: "Product descriptions", // Optional.
   prompt: "Write a product description.", // Optional for usage-only checks.
 })
@@ -264,14 +263,19 @@ Call `flush()` **after your provider work**, typically in a `finally` block. It 
 | --- | --- | --- |
 | `apiKey` | Required | Your Orlune API key. |
 | `telemetryDelivery.mode` | `TelemetryMode.Sync` | Delivery mode. |
-| `telemetryDelivery.timeoutMs` | `5000` | Timeout for each telemetry send attempt. |
+| `timeoutMs` | `5000` | Timeout for each Orlune HTTP attempt: evaluation or telemetry, including telemetry retries. |
 | `telemetryDelivery.flushIntervalMs` | `1000` | Background-only interval between scheduled flushes. |
 | `telemetryDelivery.maxQueueSize` | `500` | Background-only maximum waiting events. |
 | `telemetryDelivery.maxRetries` | `2` | Background-only retries after the initial send fails. |
-| `evaluationTimeoutMs` | `5000` | Default evaluation timeout. |
+| `guardrails.enabled` | `false` | Automatic checks before wrapped provider calls. Required when supplying `guardrails`. |
+| `guardrails.onError` | `GuardrailErrorMode.Throw` | Handling for automatic evaluation failures. |
 | `baseURL` | Orlune production | Optional override for a different Orlune deployment. |
 
-A wrap-level `guardrails.timeoutMs` or direct `evaluate(request, { timeoutMs, signal })` call overrides the default evaluation timeout. Provider request cancellation signals also apply during automatic preflight. These timeouts do not set the provider's own timeout.
+Guardrail settings and `timeoutMs` belong only on `OrluneClient()`. Each Orlune HTTP attempt gets the configured timeout independently; it is not a combined deadline for evaluation and telemetry. `wrap()` accepts attribution defaults, not guardrail overrides. Explicit `evaluate(request, { signal })` accepts cancellation, not timeout overrides. Provider request cancellation signals also apply during automatic preflight. Provider timeouts remain controlled by the provider SDK.
+
+`guardrails.enabled` controls automatic checks only. An explicit `evaluate()` always runs and returns the decision, including `BLOCK`, even when automatic checks are disabled. Evaluation failures throw regardless of `guardrails.onError`, which only controls automatic checks.
+
+Use separate Orlune clients and provider instances if you need different settings.
 
 `baseURL` must be an HTTPS origin without a path, credentials, query, or fragment. HTTP is allowed for localhost testing. The override applies to both telemetry and evaluation.
 

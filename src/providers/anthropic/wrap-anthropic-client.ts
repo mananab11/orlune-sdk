@@ -37,9 +37,9 @@ export function wrapAnthropicClient(client: object, options: WrapProviderClientO
       start: async () => {
         const signal = record(args[1]).signal
         // A denied preflight is not a failed provider request and emits no provider telemetry.
-        if (options.orluneOptions?.guardrails?.enabled) {
+        if (options.guardrails?.enabled) {
           if (!options.evaluate) throw new OrluneEvaluationException("Guardrail evaluator is not configured.", "INVALID_REQUEST")
-          await checkGuardrails(options.evaluate, options.orluneOptions.guardrails, metadata,
+          await checkGuardrails(options.evaluate, options.guardrails, metadata,
             signal instanceof AbortSignal ? signal : undefined, extractAnthropicPrompt(cleanInput))
         }
         startedAt = new Date().toISOString()
@@ -61,7 +61,7 @@ export function wrapAnthropicClient(client: object, options: WrapProviderClientO
     })
   }
   const stream = messages.stream
-  if (stream && options.orluneOptions?.guardrails?.enabled) {
+  if (stream && options.guardrails?.enabled) {
     // Native stream() calls the wrapped create(); do not evaluate or emit a second time.
     messages.stream = function (...args: unknown[]) {
       const result = stream.apply(this, args)

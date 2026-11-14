@@ -27,9 +27,6 @@ function validateTimeout(value: number | undefined, field: string) {
 function wrapSettings(options?: WrapClientOptions) {
   return JSON.stringify([
     options?.defaults?.feature,
-    options?.guardrails?.enabled ?? false,
-    options?.guardrails?.onError ?? "throw",
-    options?.guardrails?.timeoutMs,
   ])
 }
 
@@ -48,17 +45,30 @@ function markWrapped(client: object, owner: symbol, settings: string) {
 export function OrluneClient(options: CreateClientOptions): OrluneClientInstance {
   assertNonEmptyString(options.apiKey, "apiKey")
   if ("environment" in options) throw new Error("environment is no longer supported. Use baseURL for a nonproduction API origin.")
-  validateTimeout(options.evaluationTimeoutMs, "evaluationTimeoutMs")
+  validateTimeout(options.timeoutMs, "timeoutMs")
+  const timeoutMs = options.timeoutMs ?? 5000
+  const settings = options.guardrails
+  if (settings !== undefined) {
+    if (settings === null || typeof settings.enabled !== "boolean") {
+      throw new Error("guardrails.enabled must be a boolean.")
+    }
+    if (settings.onError !== undefined && settings.onError !== "throw" && settings.onError !== "allow") {
+      throw new Error('guardrails.onError must be "throw" or "allow".')
+    }
+  }
+  const guardrails = Object.freeze({
+    enabled: settings?.enabled ?? false,
+    onError: settings?.onError ?? "throw",
+  })
   const owner = Symbol("orlune.client")
 
   const baseURL = resolveBaseURL(options.baseURL)
   const endpoint = new URL("/v1/events", baseURL).href
-  const evaluate = createEvaluator(options.apiKey, new URL("/v1/guardrails/evaluate", baseURL).href, options.evaluationTimeoutMs)
+  const evaluate = createEvaluator(options.apiKey, new URL("/v1/guardrails/evaluate", baseURL).href, timeoutMs)
   const transport = createTelemetryTransport({
     apiKey: options.apiKey,
     endpoint,
-    ...(options.telemetryDelivery?.timeoutMs !== undefined
-      ? { timeoutMs: options.telemetryDelivery.timeoutMs } : {}),
+    timeoutMs,
   })
   const telemetryDispatcher =
     options.telemetryDelivery === undefined
@@ -73,16 +83,6 @@ export function OrluneClient(options: CreateClientOptions): OrluneClientInstance
   return {
     evaluate,
     wrap<TClient extends object>(client: TClient, options?: WrapClientOptions): WrappedProviderClient<TClient> {
-      if (options?.guardrails !== undefined) {
-        const settings = options.guardrails
-        if (settings === null || typeof settings.enabled !== "boolean") {
-          throw new Error("guardrails.enabled must be a boolean.")
-        }
-        if (settings.onError !== undefined && settings.onError !== "throw" && settings.onError !== "allow") {
-          throw new Error('guardrails.onError must be "throw" or "allow".')
-        }
-        validateTimeout(settings.timeoutMs, "guardrails.timeoutMs")
-      }
       const existing = Reflect.get(client, ORLUNE_WRAPPED) as { owner?: symbol; settings?: string } | undefined
       if (existing !== undefined) {
         if (existing.owner !== owner) {
@@ -101,16 +101,12 @@ export function OrluneClient(options: CreateClientOptions): OrluneClientInstance
       }
 
       const savedOptions = options === undefined ? undefined : structuredClone(options)
-      const wrappedClient = savedOptions === undefined
-        ? providerAdapter.wrap(client, {
-            telemetryDispatcher,
-            evaluate,
-          })
-        : providerAdapter.wrap(client, {
-            orluneOptions: savedOptions,
-            telemetryDispatcher,
-            evaluate,
-          })
+      const wrappedClient = providerAdapter.wrap(client, {
+        ...(savedOptions === undefined ? {} : { orluneOptions: savedOptions }),
+        guardrails,
+        telemetryDispatcher,
+        evaluate,
+      })
 
       markWrapped(wrappedClient, owner, wrapSettings(savedOptions))
 

@@ -8,21 +8,19 @@ const provider = create => ({ baseURL: "https://api.openai.com/v1", responses: {
 
 test("configuration constants are frozen and work with the public client", () => {
   for (const constants of [TelemetryMode, GuardrailErrorMode]) assert.ok(Object.isFrozen(constants))
-  const sdk = OrluneClient({ ...options, telemetryDelivery: { mode: TelemetryMode.BackgroundFlush } })
-  sdk.wrap(provider(() => {}), { guardrails: { enabled: true, onError: GuardrailErrorMode.Allow } })
+  const sdk = OrluneClient({ ...options, telemetryDelivery: { mode: TelemetryMode.BackgroundFlush }, guardrails: { enabled: true, onError: GuardrailErrorMode.Allow } })
+  sdk.wrap(provider(() => {}))
 })
 
 test("invalid guardrail configuration fails at setup, before modifying the provider", () => {
-  const sdk = OrluneClient(options)
-  for (const guardrails of [null, {}, { enabled: "false" }, { enabled: 1 }, { enabled: true, onError: "alow" },
-    { enabled: false, timeoutMs: 0 }, { enabled: true, timeoutMs: NaN }]) {
+  for (const guardrails of [null, {}, { enabled: "false" }, { enabled: 1 }, { enabled: true, onError: "alow" }]) {
     const original = () => {}
     const raw = provider(original)
-    assert.throws(() => sdk.wrap(raw, { guardrails }), /guardrails/)
+    assert.throws(() => OrluneClient({ ...options, guardrails }).wrap(raw), /guardrails/)
     assert.equal(raw.responses.create, original)
   }
-  for (const evaluationTimeoutMs of [0, -1, NaN, Infinity, 0.5, 2_147_483_648]) {
-    assert.throws(() => OrluneClient({ ...options, evaluationTimeoutMs }), /evaluationTimeoutMs/)
+  for (const timeoutMs of [0, -1, NaN, Infinity, 0.5, 2_147_483_648]) {
+    assert.throws(() => OrluneClient({ ...options, timeoutMs }), /timeoutMs/)
   }
 })
 

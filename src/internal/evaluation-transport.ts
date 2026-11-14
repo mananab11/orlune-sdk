@@ -24,13 +24,14 @@ function isResult(value: unknown): value is EvaluationResult {
 
 export function createEvaluator(apiKey: string, endpoint: string, defaultTimeoutMs = 5000) {
   return async (request: EvaluationRequest, options: EvaluationOptions = {}): Promise<EvaluationResult> => {
-    const timeoutMs = options.timeoutMs ?? defaultTimeoutMs
+    const timeoutMs = defaultTimeoutMs
     if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 2147483647) {
       throw new OrluneEvaluationException("Evaluation timeoutMs must be a positive duration.", "INVALID_REQUEST")
     }
-    for (const [field, value] of Object.entries({ customerId: request?.customerId, feature: request?.feature, activityId: request?.activityId, activityType: request?.activityType })) {
+    const activity = isRecord(request?.activity) ? request.activity : undefined
+    for (const [field, value] of Object.entries({ customerId: request?.customerId, feature: request?.feature, "activity.id": activity?.id, "activity.type": activity?.type })) {
       if (field === "feature" && value === undefined) continue
-      const maxLength = field === "activityType" ? 128 : 256
+      const maxLength = field === "activity.type" ? 128 : 256
       if (typeof value !== "string" || !value.trim() || value.length > maxLength) {
         throw new OrluneEvaluationException(`${field} must be a non-empty string of at most ${maxLength} characters.`, "INVALID_REQUEST")
       }
@@ -57,7 +58,7 @@ export function createEvaluator(apiKey: string, endpoint: string, defaultTimeout
     try {
       const response = await fetch(endpoint, {
         method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify({ customerId: request.customerId, feature: request.feature, activityId: request.activityId, activityType: request.activityType, prompt }),
+        body: JSON.stringify({ customerId: request.customerId, feature: request.feature, activityId: activity!.id, activityType: activity!.type, prompt }),
         signal: controller.signal,
       })
       if (!response.ok) {

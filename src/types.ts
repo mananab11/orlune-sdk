@@ -6,8 +6,11 @@ export type CreateClientOptions = {
   apiKey: string
   /** Orlune API origin. Defaults to production; override for local testing. */
   baseURL?: string
+  /** Timeout for each Orlune HTTP attempt, in milliseconds. Defaults to 5000. */
+  timeoutMs?: number
   telemetryDelivery?: TelemetryDeliveryOptions
-  evaluationTimeoutMs?: number
+  /** Automatic checks for wrapped providers. */
+  guardrails?: GuardrailOptions
 }
 
 export type OrluneActivityMetadata = {
@@ -35,14 +38,10 @@ export type TelemetryDeliveryMode = typeof TelemetryMode[keyof typeof TelemetryM
 
 export type SyncTelemetryDeliveryOptions = {
   mode: typeof TelemetryMode.Sync
-  /** Per-send timeout in milliseconds. Defaults to 5000. */
-  timeoutMs?: number
 }
 
 export type BackgroundFlushTelemetryDeliveryOptions = {
   mode: typeof TelemetryMode.BackgroundFlush
-  /** Per-send timeout in milliseconds, including each retry. Defaults to 5000. */
-  timeoutMs?: number
   maxQueueSize?: number
   flushIntervalMs?: number
   maxRetries?: number
@@ -54,7 +53,6 @@ export type TelemetryDeliveryOptions =
 
 export type WrapClientOptions = {
   defaults?: OrluneWrapDefaults
-  guardrails?: GuardrailOptions
 }
 
 export type WrappedClientRequestMetadata = {

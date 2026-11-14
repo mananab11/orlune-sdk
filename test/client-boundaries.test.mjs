@@ -11,12 +11,12 @@ const provider = () => new OpenAI({ apiKey: "test" })
 test("repeated wraps preserve ownership and reject configuration changes at setup", () => {
   const first = sdk()
   const client = provider()
-  const settings = { defaults: { feature: "original" }, guardrails: { enabled: true } }
+  const settings = { defaults: { feature: "original" } }
   assert.equal(first.wrap(client, settings), client)
   assert.equal(first.wrap(client), client)
-  assert.equal(first.wrap(client, { guardrails: { enabled: true }, defaults: { feature: "original" } }), client)
+  assert.equal(first.wrap(client, { defaults: { feature: "original" } }), client)
   assert.throws(() => sdk().wrap(client), /another Orlune client/)
-  assert.throws(() => first.wrap(client, { guardrails: { enabled: false } }), /different settings/)
+  assert.throws(() => first.wrap(client, { defaults: { feature: "other" } }), /different settings/)
   settings.defaults.feature = "changed"
   assert.throws(() => first.wrap(client, settings), /different settings/)
 })
@@ -24,12 +24,11 @@ test("repeated wraps preserve ownership and reject configuration changes at setu
 test("wrap settings are snapshotted rather than following caller mutations", async t => {
   const events = []
   t.mock.method(globalThis, "fetch", async (_url, init) => { events.push(JSON.parse(init.body).event); return Response.json({}) })
-  const settings = { defaults: { feature: "original" }, guardrails: { enabled: false } }
+  const settings = { defaults: { feature: "original" } }
   const client = sdk().wrap({ baseURL: "https://api.openai.com/v1", responses: { async create() {
     return { id: "test", model: "gpt-4.1", usage: {} }
   } } }, settings)
   settings.defaults.feature = "changed"
-  settings.guardrails.enabled = true
   await client.responses.create({ orlune_metadata: { customerId: "test", eventType: "MODEL_CALL", activity: { id: "activity", type: "original" } } })
   assert.equal(events.length, 1)
   assert.equal(events[0].feature, "original")

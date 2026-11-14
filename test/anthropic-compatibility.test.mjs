@@ -80,8 +80,8 @@ function setup(t, { block = false, fail = false, events = streamEvents, guarded 
       { headers: { "content-type": "text/event-stream", "request-id": "req_stream" } })
     return Response.json(message, { headers: { "request-id": "req_response" } })
   } })
-  const sdk = OrluneClient({ apiKey: "fake", baseURL: "https://test.invalid", telemetryDelivery: delivery })
-  const client = sdk.wrap(provider, { guardrails: { enabled: guarded } })
+  const sdk = OrluneClient({ apiKey: "fake", baseURL: "https://test.invalid", telemetryDelivery: delivery, guardrails: { enabled: guarded } })
+  const client = sdk.wrap(provider)
   const input = { model: "claude-haiku-4-5", max_tokens: 100, system: "Trusted instructions",
     messages: [{ role: "user", content: "Hello" }], orlune_metadata: metadata }
   return { client, sdk, input, checks, telemetry, calls: () => calls }

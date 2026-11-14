@@ -35,7 +35,7 @@ test("throwing warning logger does not prevent prompt truncation and evaluation"
     return Response.json(result)
   })
   const evaluate = createEvaluator("test", "https://test.invalid")
-  assert.deepEqual(await evaluate({ customerId: "customer", activityId: "activity",
-    activityType: "test", prompt: "x".repeat(100001) }), result)
+  assert.deepEqual(await evaluate({ customerId: "customer", activity: { id: "activity", type: "test" },
+    prompt: "x".repeat(100001) }), result)
   assert.equal(prompt.length, 100000)
 })

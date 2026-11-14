@@ -8,12 +8,10 @@ export async function checkGuardrails(evaluate: OrluneClient["evaluate"], settin
   try {
     const result = await evaluate({
       customerId: metadata.customerId,
-      activityId: metadata.activity.id,
+      activity: metadata.activity,
       ...(metadata.feature !== undefined ? { feature: metadata.feature } : {}),
-      activityType: metadata.activity.type,
       ...(prompt !== undefined ? { prompt } : {}),
     }, {
-      ...(settings.timeoutMs !== undefined ? { timeoutMs: settings.timeoutMs } : {}),
       ...(signal ? { signal } : {}),
     })
     if (signal?.aborted) throw new OrluneEvaluationException("Evaluation canceled.", "ABORTED")

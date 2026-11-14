@@ -102,12 +102,12 @@ function wrapCreateMethod(
     return observeApiCall({
       start: async () => {
         // Preflight is outside provider error handling: a denied call has no provider event.
-        if (options.orluneOptions?.guardrails?.enabled) {
+        if (options.guardrails?.enabled) {
           if (!options.evaluate) throw new OrluneEvaluationException("Guardrail evaluator is not configured.", "INVALID_REQUEST")
           const requestOptions = restArgs[0]
           const signal = isRecord(requestOptions) && requestOptions.signal instanceof AbortSignal
             ? requestOptions.signal : undefined
-          await checkGuardrails(options.evaluate, options.orluneOptions.guardrails, effectiveMetadata, signal,
+          await checkGuardrails(options.evaluate, options.guardrails, effectiveMetadata, signal,
             extractOpenAIPrompt(cleanInput, apiFamily))
         }
         startedAt = new Date().toISOString()

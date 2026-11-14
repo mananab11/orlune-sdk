@@ -3,7 +3,8 @@ import assert from "node:assert/strict"
 import { OrluneClient, OrluneGuardrailException, OrluneEvaluationException } from "../dist/index.js"
 import { extractOpenAIPrompt } from "../dist/providers/openai/extract-prompt.js"
 
-const request = { customerId: "customer", feature: "summaries", activityId: "activity", activityType: "test" }
+const request = { customerId: "customer", feature: "summaries", activity: { id: "activity", type: "test" } }
+const wireRequest = { customerId: "customer", feature: "summaries", activityId: "activity", activityType: "test" }
 const metadata = { customerId: "customer", eventType: "MODEL_CALL", activity: { id: "activity", type: "test" } }
 const result = (decision = "ALLOW") => ({
   evaluationId: "evaluation-1", evaluatedAt: "2026-10-04T00:00:00Z", decision,
@@ -57,10 +58,8 @@ test(`${reasonCode} proceeds once for both APIs and streams, independent of onEr
             }
           })()
         } }
-        const sdk = makeClient()
-        sdk.wrap(family === "responses" ? { baseURL: "https://api.openai.com/v1", responses: endpoint } : { baseURL: "https://api.openai.com/v1", chat: { completions: endpoint } }, {
-          guardrails: { enabled: true, onError },
-        })
+        const sdk = makeClient({ guardrails: { enabled: true, onError } })
+        sdk.wrap(family === "responses" ? { baseURL: "https://api.openai.com/v1", responses: endpoint } : { baseURL: "https://api.openai.com/v1", chat: { completions: endpoint } })
         const output = await endpoint.create({ model: native.model, stream, orlune_metadata: { ...metadata, feature: "test" } })
         if (stream) {
           let chunks = 0
@@ -99,10 +98,10 @@ test("direct evaluations reject missing or invalid activity IDs before sending a
   const fetch = t.mock.method(globalThis, "fetch", async () => { assert.fail("No HTTP request expected") })
   const sdk = makeClient()
   await assert.rejects(sdk.evaluate({ customerId: "customer" }), (error) =>
-    error instanceof OrluneEvaluationException && error.code === "INVALID_REQUEST" && /activityId/.test(error.message))
+    error instanceof OrluneEvaluationException && error.code === "INVALID_REQUEST" && /activity.id/.test(error.message))
   for (const activityId of [undefined, null, "", "   ", 123, "a".repeat(257)]) {
-    await assert.rejects(sdk.evaluate({ ...request, activityId }), (error) =>
-      error instanceof OrluneEvaluationException && error.code === "INVALID_REQUEST" && /activityId/.test(error.message))
+    await assert.rejects(sdk.evaluate({ ...request, activity: { ...request.activity, id: activityId } }), (error) =>
+      error instanceof OrluneEvaluationException && error.code === "INVALID_REQUEST" && /activity.id/.test(error.message))
   }
   assert.equal(fetch.mock.callCount(), 0)
 })
@@ -111,12 +110,12 @@ test("blocked calls forward activity context without invoking the provider or se
   let providerCalls = 0
   const fetch = t.mock.method(globalThis, "fetch", async (url, init) => {
     assert.ok(url.endsWith("/evaluate"))
-    assert.deepEqual(JSON.parse(init.body), { ...request, activityType: "generate_campaign", prompt: "Write a campaign" })
+    assert.deepEqual(JSON.parse(init.body), { ...wireRequest, activityType: "generate_campaign", prompt: "Write a campaign" })
     return Response.json(result("BLOCK"))
   })
   const endpoint = { async create() { providerCalls++; return response } }
-  const sdk = makeClient()
-  sdk.wrap({ baseURL: "https://api.openai.com/v1", responses: endpoint }, { guardrails: { enabled: true } })
+  const sdk = makeClient({ guardrails: { enabled: true } })
+  sdk.wrap({ baseURL: "https://api.openai.com/v1", responses: endpoint })
   await assert.rejects(endpoint.create({ model: "gpt-4.1-mini", input: "Write a campaign", orlune_metadata: {
     ...metadata, feature: "summaries", activity: { id: "activity", type: "generate_campaign" },
   } }), OrluneGuardrailException)
@@ -135,7 +134,7 @@ test("wrapped blocked calls preserve the explicit activity ID and type", async (
     return Response.json(result("BLOCK"))
   })
   const endpoint = { create() { assert.fail("Blocked provider must not run") } }
-  makeClient().wrap({ baseURL: "https://api.openai.com/v1", responses: endpoint }, { guardrails: { enabled: true } })
+  makeClient({ guardrails: { enabled: true } }).wrap({ baseURL: "https://api.openai.com/v1", responses: endpoint })
   await assert.rejects(endpoint.create({ model: response.model, orlune_metadata: {
     customerId: "customer", eventType: "MODEL_CALL", activity: { id: "activity", type: "test" },
   } }), OrluneGuardrailException)
@@ -175,7 +174,7 @@ test("explicit evaluation truncates oversized prompts without changing the origi
   const oversizedRequest = { ...request, prompt: "x".repeat(100_001) }
   await makeClient().evaluate(oversizedRequest)
   assert.equal(bodies[0].prompt.length, 100_000)
-  assert.deepEqual(bodies[1], { ...request, prompt: "x".repeat(100_000) })
+  assert.deepEqual(bodies[1], { ...wireRequest, prompt: "x".repeat(100_000) })
   assert.equal(oversizedRequest.prompt.length, 100_001)
   assert.equal(warning.mock.callCount(), 1)
   for (const prompt of [null, 123]) {
@@ -211,9 +210,7 @@ test("oversized wrapped prompts preserve OpenAI input and still enforce usage bl
         assert.equal(family === "responses" ? input.input : input.messages[0].content, prompt)
         return response
       } }
-      makeClient().wrap(family === "responses" ? { baseURL: "https://api.openai.com/v1", responses: endpoint } : { baseURL: "https://api.openai.com/v1", chat: { completions: endpoint } }, {
-        guardrails: { enabled: true },
-      })
+      makeClient({ guardrails: { enabled: true } }).wrap(family === "responses" ? { baseURL: "https://api.openai.com/v1", responses: endpoint } : { baseURL: "https://api.openai.com/v1", chat: { completions: endpoint } })
       const pending = endpoint.create({ model: response.model, orlune_metadata: metadata,
         ...(family === "responses" ? { input: prompt } : { messages: [{ role: "user", content: prompt }] }) })
       if (decision === "BLOCK") await assert.rejects(pending, OrluneGuardrailException)
@@ -250,9 +247,7 @@ test("prompt preflight preserves allow/block behavior for both APIs and streams"
           if (!stream) return response
           return (async function* () {})()
         } }
-        makeClient().wrap(family === "responses" ? { baseURL: "https://api.openai.com/v1", responses: endpoint } : { baseURL: "https://api.openai.com/v1", chat: { completions: endpoint } }, {
-          guardrails: { enabled: true, onError: "allow" },
-        })
+        makeClient({ guardrails: { enabled: true, onError: "allow" } }).wrap(family === "responses" ? { baseURL: "https://api.openai.com/v1", responses: endpoint } : { baseURL: "https://api.openai.com/v1", chat: { completions: endpoint } })
         if (blocked) {
           await assert.rejects(endpoint.create(input), (error) => error instanceof OrluneGuardrailException && error.reasonCode === reason)
           assert.equal(providerCalls, 0)
@@ -274,10 +269,10 @@ test("ALLOW with a triggered policy is returned and still permits the provider c
   let providerCalls = 0
   t.mock.method(globalThis, "fetch", async (url) => url.endsWith("/evaluate")
     ? Response.json(allowed) : new Response(null, { status: 202 }))
-  const sdk = makeClient()
+  const sdk = makeClient({ guardrails: { enabled: true } })
   assert.deepEqual(await sdk.evaluate(request), allowed)
   const endpoint = { async create() { providerCalls++; return response } }
-  sdk.wrap({ baseURL: "https://api.openai.com/v1", responses: endpoint }, { guardrails: { enabled: true } })
+  sdk.wrap({ baseURL: "https://api.openai.com/v1", responses: endpoint })
   await endpoint.create({ model: response.model, input: "test", orlune_metadata: metadata })
   assert.equal(providerCalls, 1)
 })
@@ -298,7 +293,7 @@ test("explicit evaluate sends only the contract and returns ALLOW or BLOCK witho
     const fetch = t.mock.method(globalThis, "fetch", async (url, init) => {
       assert.ok(url.endsWith("/v1/guardrails/evaluate"))
       assert.equal(init.headers.authorization, "Bearer key")
-      assert.deepEqual(JSON.parse(init.body), request)
+      assert.deepEqual(JSON.parse(init.body), wireRequest)
       return Response.json(result(decision))
     })
     assert.deepEqual(await makeClient().evaluate({ ...request, applicationId: "not-sent" }), result(decision))
@@ -314,11 +309,11 @@ test("both provider families check before calls, strip metadata and share activi
       const body = JSON.parse(init.body)
       if (url.endsWith("/evaluate")) {
         order.push("evaluate")
-        assert.deepEqual(body, request)
+        assert.deepEqual(body, wireRequest)
         return Response.json(result())
       }
       order.push("telemetry")
-      assert.equal(body.event.operation.id, request.activityId)
+      assert.equal(body.event.operation.id, request.activity.id)
       return new Response(null, { status: 202 })
     })
     const endpoint = { async create(input, options) {
@@ -328,8 +323,8 @@ test("both provider families check before calls, strip metadata and share activi
       return response
     } }
     const provider = family === "responses" ? { baseURL: "https://api.openai.com/v1", responses: endpoint } : { baseURL: "https://api.openai.com/v1", chat: { completions: endpoint } }
-    const sdk = makeClient()
-    sdk.wrap(provider, { defaults: { feature: "old" }, guardrails: { enabled: true } })
+    const sdk = makeClient({ guardrails: { enabled: true } })
+    sdk.wrap(provider, { defaults: { feature: "old" } })
     assert.equal(await endpoint.create({ model: "gpt-4.1-mini", orlune_metadata: { ...metadata, feature: "summaries" } }, { custom: "preserved" }), response)
     assert.deepEqual(order, ["evaluate", "provider", "telemetry"])
     fetch.mock.restore()
@@ -342,10 +337,8 @@ test("BLOCK throws the typed exception and never calls provider or writes usage,
     for (const stream of [false, true]) {
       let calls = 0
       const endpoint = { create() { calls++; throw new Error("Should not run") } }
-      const sdk = makeClient()
-      sdk.wrap(family === "responses" ? { baseURL: "https://api.openai.com/v1", responses: endpoint } : { baseURL: "https://api.openai.com/v1", chat: { completions: endpoint } }, {
-        guardrails: { enabled: true, onError: "allow" },
-      })
+      const sdk = makeClient({ guardrails: { enabled: true, onError: "allow" } })
+      sdk.wrap(family === "responses" ? { baseURL: "https://api.openai.com/v1", responses: endpoint } : { baseURL: "https://api.openai.com/v1", chat: { completions: endpoint } })
       await assert.rejects(endpoint.create({ stream, orlune_metadata: metadata }), (error) => {
         assert.ok(error instanceof OrluneGuardrailException)
         assert.equal(error.message, "Daily budget reached")
@@ -375,7 +368,7 @@ test("stream checks once before opening, not on each chunk", async (t) => {
       yield { type: "response.completed", response }
     })()
   } }
-  makeClient().wrap({ baseURL: "https://api.openai.com/v1", responses: endpoint }, { guardrails: { enabled: true } })
+  makeClient({ guardrails: { enabled: true } }).wrap({ baseURL: "https://api.openai.com/v1", responses: endpoint })
   const stream = await endpoint.create({ stream: true, model: response.model, orlune_metadata: metadata })
   let chunks = 0
   for await (const chunk of stream) { chunks++ }
@@ -392,7 +385,7 @@ test("evaluation errors stop calls by default; explicit fail-open allows provide
   })
   for (const onError of ["throw", "allow"]) {
     const endpoint = { async create() { providerCalls++; return response } }
-    makeClient().wrap({ baseURL: "https://api.openai.com/v1", responses: endpoint }, { guardrails: { enabled: true, onError } })
+    makeClient({ guardrails: { enabled: true, onError } }).wrap({ baseURL: "https://api.openai.com/v1", responses: endpoint })
     const call = endpoint.create({ model: response.model, orlune_metadata: metadata })
     if (onError === "throw") await assert.rejects(call, (error) => error instanceof OrluneEvaluationException && error.status === 503)
     else await call
@@ -405,8 +398,8 @@ test("evaluation errors stop calls by default; explicit fail-open allows provide
 test("invalid metadata never fails open and malformed responses never become an allow", async (t) => {
   const fetch = t.mock.method(globalThis, "fetch", async () => Response.json({ decision: "ALLOW" }))
   const endpoint = { create() { assert.fail("provider should not run") } }
-  const sdk = makeClient()
-  sdk.wrap({ baseURL: "https://api.openai.com/v1", responses: endpoint }, { guardrails: { enabled: true, onError: "allow" } })
+  const sdk = makeClient({ guardrails: { enabled: true, onError: "allow" } })
+  sdk.wrap({ baseURL: "https://api.openai.com/v1", responses: endpoint })
   assert.throws(() => endpoint.create({ orlune_metadata: { activity: { id: "activity", type: "test" } } }), /customerId/)
   assert.throws(() => endpoint.create(), /activity.type/)
   assert.equal(fetch.mock.callCount(), 0)
@@ -430,10 +423,10 @@ test("timeout and cancellation are typed and no automatic retries occur", async 
   const fetch = t.mock.method(globalThis, "fetch", async (_url, init) => new Promise((_resolve, reject) => {
     init.signal.addEventListener("abort", () => reject(init.signal.reason), { once: true })
   }))
-  const sdk = makeClient({ evaluationTimeoutMs: 10 })
+  const sdk = makeClient({ timeoutMs: 10, guardrails: { enabled: false } })
   await assert.rejects(sdk.evaluate(request), (error) => error.code === "TIMEOUT")
   const controller = new AbortController()
-  const pending = sdk.evaluate(request, { signal: controller.signal, timeoutMs: 1000 })
+  const pending = sdk.evaluate(request, { signal: controller.signal })
   controller.abort()
   await assert.rejects(pending, (error) => error.code === "ABORTED")
   await assert.rejects(sdk.evaluate(request, { signal: controller.signal }), (error) => error.code === "ABORTED")
@@ -445,17 +438,11 @@ test("provider cancellation during preflight prevents execution even with fail-o
     init.signal.addEventListener("abort", () => reject(init.signal.reason), { once: true })
   }))
   const endpoint = { create() { assert.fail("provider should not run") } }
-  makeClient().wrap({ baseURL: "https://api.openai.com/v1", responses: endpoint }, { guardrails: { enabled: true, onError: "allow" } })
+  makeClient({ guardrails: { enabled: true, onError: "allow" } }).wrap({ baseURL: "https://api.openai.com/v1", responses: endpoint })
   const controller = new AbortController()
   const call = endpoint.create({ orlune_metadata: metadata }, { signal: controller.signal })
   controller.abort()
   await assert.rejects(call, (error) => error.code === "ABORTED")
-})
-
-test("guardrails cannot be silently enabled on an already wrapped client", () => {
-  const sdk = makeClient()
-  const provider = sdk.wrap({ baseURL: "https://api.openai.com/v1", responses: { async create() { return response } } })
-  assert.throws(() => sdk.wrap(provider, { guardrails: { enabled: true } }), /already wrapped/)
 })
 
 test("background telemetry still awaits evaluation and reuses the generated activity ID", async (t) => {
@@ -471,9 +458,9 @@ test("background telemetry still awaits evaluation and reuses the generated acti
     telemetryRequest = JSON.parse(init.body)
     return Promise.resolve(new Response(null, { status: 202 }))
   })
-  const sdk = makeClient({ telemetryDelivery: { mode: "background_flush", flushIntervalMs: 60000 } })
+  const sdk = makeClient({ guardrails: { enabled: true }, telemetryDelivery: { mode: "background_flush", flushIntervalMs: 60000 } })
   const endpoint = { async create() { providerCalls++; return response } }
-  sdk.wrap({ baseURL: "https://api.openai.com/v1", responses: endpoint }, { defaults: { feature: "summaries" }, guardrails: { enabled: true } })
+  sdk.wrap({ baseURL: "https://api.openai.com/v1", responses: endpoint }, { defaults: { feature: "summaries" } })
   const pending = endpoint.create({ model: response.model, orlune_metadata: metadata })
   assert.equal(providerCalls, 0)
   assert.ok(evaluationRequest.activityId)

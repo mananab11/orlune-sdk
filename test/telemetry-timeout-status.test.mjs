@@ -19,8 +19,8 @@ for (const mode of ["sync", "background_flush"]) {
     })
     t.mock.method(console, "warn", () => {})
     const logged = t.mock.method(console, "error", () => {})
-    const sdk = OrluneClient({ apiKey: "test", baseURL: "https://test.invalid", telemetryDelivery: {
-      mode, timeoutMs: 10, ...(mode === "background_flush" ? { maxRetries: 1, flushIntervalMs: 60000 } : {}),
+    const sdk = OrluneClient({ apiKey: "test", baseURL: "https://test.invalid", timeoutMs: 10, telemetryDelivery: {
+      mode, ...(mode === "background_flush" ? { maxRetries: 1, flushIntervalMs: 60000 } : {}),
     } })
     const client = sdk.wrap({ baseURL: "https://api.openai.com/v1", responses: { async create() { return response } } })
     assert.equal(await client.responses.create({ model: "gpt-4.1", orlune_metadata: metadata }), response)
@@ -37,7 +37,7 @@ test("telemetry timeout does not replace provider exceptions", async t => {
     signal.addEventListener("abort", () => reject(signal.reason), { once: true })
   }))
   const error = Object.assign(new Error("provider error"), { request_id: "req_1" })
-  const client = OrluneClient({ apiKey: "test", baseURL: "https://test.invalid", telemetryDelivery: { mode: "sync", timeoutMs: 10 } })
+  const client = OrluneClient({ apiKey: "test", baseURL: "https://test.invalid", timeoutMs: 10, telemetryDelivery: { mode: "sync" } })
     .wrap({ baseURL: "https://api.openai.com/v1", responses: { async create() { throw error } } })
   await assert.rejects(client.responses.create({ model: "gpt-4.1", orlune_metadata: metadata }), caught => caught === error)
   assert.equal(logged.mock.callCount(), 1)
@@ -70,9 +70,9 @@ test("sync HTTP telemetry failures log once without leaking payloads or changing
   assert.deepEqual(logged.mock.calls.map(call => call.arguments), [["[orlune] Telemetry delivery failed."]])
 })
 
-test("invalid telemetry timeouts fail at initialization", () => {
+test("invalid client timeouts fail at initialization", () => {
   for (const timeoutMs of [0, -1, 1.5, NaN, Infinity, 2147483648]) {
-    assert.throws(() => OrluneClient({ apiKey: "test", baseURL: "https://test.invalid", telemetryDelivery: { mode: "sync", timeoutMs } }), /timeoutMs/)
+    assert.throws(() => OrluneClient({ apiKey: "test", baseURL: "https://test.invalid", timeoutMs }), /timeoutMs/)
   }
 })
 

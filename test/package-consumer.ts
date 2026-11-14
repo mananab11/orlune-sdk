@@ -14,6 +14,7 @@ globalThis.fetch = async (_input, init) => {
   return new Response(null, { status: 202 })
 }
 const sdk = OrluneClient({ apiKey: "local-test", baseURL: "https://test.invalid",
+  guardrails: { enabled: false, onError: GuardrailErrorMode.Throw },
   telemetryDelivery: { mode: TelemetryMode.Sync } })
 const native = { baseURL: "https://api.openai.com/v1", responses: {
   async create(input: { model: string }) {
@@ -21,6 +22,6 @@ const native = { baseURL: "https://api.openai.com/v1", responses: {
     return { id: "request", model: input.model, status: "completed", usage: { input_tokens: 1, output_tokens: 1 } }
   },
 } }
-const client = sdk.wrap(native, { guardrails: { enabled: false, onError: GuardrailErrorMode.Throw } })
+const client = sdk.wrap(native)
 const response = await client.responses.create({ model: "model", orlune_metadata: metadata })
 if (response.id !== "request" || sent !== 1) throw new Error("Wrapped client smoke test failed")

@@ -33,7 +33,7 @@ for (const baseURL of [undefined, "https://test.invalid/", "http://localhost:310
       async create() { return { id: "request", model: "model", status: "completed", usage: { input_tokens: 1, output_tokens: 1 } } },
     } })
     await client.responses.create({ orlune_metadata: { customerId: "customer", eventType: "TEST", feature: "test", activity: { id: "activity", type: "test" } } })
-    await sdk.evaluate({ customerId: "customer", activityId: "activity", activityType: "test" })
+    await sdk.evaluate({ customerId: "customer", activity: { id: "activity", type: "test" } })
     const origin = baseURL ?? PRODUCTION_BASE_URL
     assert.deepEqual(urls, [new URL("/v1/events", origin).href, new URL("/v1/guardrails/evaluate", origin).href])
   })

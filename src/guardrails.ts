@@ -1,8 +1,9 @@
 import type { GuardrailErrorMode } from "./options.js"
+import type { OrluneActivityMetadata } from "./types.js"
 
-export type EvaluationRequest = { customerId: string; feature?: string; activityId: string; activityType: string; prompt?: string }
-export type EvaluationOptions = { timeoutMs?: number; signal?: AbortSignal }
-export type GuardrailOptions = { enabled: boolean; onError?: typeof GuardrailErrorMode[keyof typeof GuardrailErrorMode]; timeoutMs?: number }
+export type EvaluationRequest = { customerId: string; feature?: string; activity: OrluneActivityMetadata; prompt?: string }
+export type EvaluationOptions = { signal?: AbortSignal }
+export type GuardrailOptions = { enabled: boolean; onError?: typeof GuardrailErrorMode[keyof typeof GuardrailErrorMode] }
 type EvaluationBase = {
   evaluationId: string
   evaluatedAt: string

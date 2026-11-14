@@ -6,7 +6,23 @@ const sdk = OrluneClient({ apiKey: "test", baseURL: "https://test.invalid", tele
 OrluneClient({ apiKey: "test" })
 const client = sdk.wrap(new OpenAI({ apiKey: "test" }))
 const metadata = { customerId: "customer", eventType: "MODEL_CALL", activity: { id: "conversation", type: "support" } }
-sdk.wrap(new OpenAI({ apiKey: "test" }), { guardrails: { enabled: true, onError: GuardrailErrorMode.Allow } })
+OrluneClient({ apiKey: "test", guardrails: { enabled: true, onError: GuardrailErrorMode.Allow } }).wrap(new OpenAI({ apiKey: "test" }))
+// @ts-expect-error guardrails belong to client initialization
+sdk.wrap(new OpenAI({ apiKey: "test" }), { guardrails: { enabled: true } })
+OrluneClient({ apiKey: "test", timeoutMs: 1000 })
+// @ts-expect-error timeout belongs on the client, not guardrails
+OrluneClient({ apiKey: "test", guardrails: { enabled: true, timeoutMs: 1000 } })
+// @ts-expect-error timeout belongs on the client, not telemetry delivery
+OrluneClient({ apiKey: "test", telemetryDelivery: { mode: TelemetryMode.Sync, timeoutMs: 1000 } })
+// @ts-expect-error the client uses timeoutMs
+OrluneClient({ apiKey: "test", evaluationTimeoutMs: 1000 })
+// @ts-expect-error per-call evaluation timeout overrides are not supported
+sdk.evaluate({ customerId: "customer", activity: metadata.activity }, { timeoutMs: 1000 })
+sdk.evaluate({ customerId: "customer", activity: metadata.activity }, { signal: new AbortController().signal })
+// @ts-expect-error evaluation requires activity.id
+sdk.evaluate({ customerId: "customer", activity: { type: "support" } })
+// @ts-expect-error evaluation requires activity.type
+sdk.evaluate({ customerId: "customer", activity: { id: "activity" } })
 // @ts-expect-error customerId is required
 client.responses.create({ model: "gpt-4.1", orlune_metadata: { eventType: "CALL", activity: metadata.activity } })
 // @ts-expect-error eventType is required

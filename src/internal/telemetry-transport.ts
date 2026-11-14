@@ -15,7 +15,7 @@ export function createTelemetryTransport(
 ): TelemetryTransport {
   const timeoutMs = params.timeoutMs ?? 5000
   if (!Number.isInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 2_147_483_647) {
-    throw new Error("telemetryDelivery.timeoutMs must be a positive integer no greater than 2147483647.")
+    throw new Error("timeoutMs must be a positive integer no greater than 2147483647.")
   }
   return {
     async send(event: UsageEventRequest): Promise<void> {

@@ -59,8 +59,8 @@ test("both provider adapters reject missing type before invoking the provider", 
   assert.equal(calls, 0)
 })
 
-test("direct evaluation requires activityType without making a network call", async () => {
+test("direct evaluation requires activity.type without making a network call", async () => {
   const sdk = OrluneClient({ apiKey: "test", baseURL: "https://test.invalid" })
-  await assert.rejects(sdk.evaluate({ customerId: "Nike", activityId: "conversation" }),
-    error => error.code === "INVALID_REQUEST" && /activityType/.test(error.message))
+  await assert.rejects(sdk.evaluate({ customerId: "Nike", activity: { id: "conversation" } }),
+    error => error.code === "INVALID_REQUEST" && /activity.type/.test(error.message))
 })
